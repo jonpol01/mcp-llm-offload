@@ -630,6 +630,9 @@ async def mock_data(
 ) -> str:
     """Generate fake/sample data from a spec. Small prompt, big output — a clear token win.
 
+    For large counts prefer fmt='csv' or 'ndjson' (far more compact); very large JSON can still
+    hit the output-token cap and truncate.
+
     Returns:
         str: the generated data, or an 'Error: ...' string.
     """
@@ -637,7 +640,7 @@ async def mock_data(
         f"You are a test-data generator. Produce {count} realistic but entirely FAKE records matching "
         f"this spec, formatted as {fmt}. Vary the values. Output only the data — no prose, no commentary."
     )
-    raw = await _complete(_build_messages(spec, system), provider, model, 0.8, min(8192, max(256, count * 60)))
+    raw = await _complete(_build_messages(spec, system), provider, model, 0.8, min(8192, max(512, count * 150)))
     if raw.startswith("Error:"):
         return raw
     return _isolate_json(raw) if fmt.lower() == "json" else _unfence(raw)
