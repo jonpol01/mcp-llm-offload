@@ -219,7 +219,7 @@ See [`.env.example`](.env.example) for a copy-paste starting point.
 
 ## The Claude Code subagent (optional)
 
-[`agents/llm-offloader.md`](agents/llm-offloader.md) is a ready-made subagent that proactively routes light work to this server and hands anything heavy or correctness-critical back to the main agent. It runs on a cheap dispatch model (`haiku`) so the *routing* costs almost nothing and the *work* lands on your backend.
+[`agents/llm-offloader.md`](agents/llm-offloader.md) is a ready-made subagent that proactively routes light work to this server and hands anything heavy or correctness-critical back to the main agent. It runs on a small dispatch model (`sonnet`, or `haiku` for less) so the *routing* is far cheaper than a frontier model and the *work* lands on your backend.
 
 ```bash
 # user-wide

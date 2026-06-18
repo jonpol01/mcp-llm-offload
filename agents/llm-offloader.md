@@ -8,7 +8,7 @@ description: >
   frontier-model quota. Do NOT use for code generation, multi-step reasoning, or
   anything correctness-critical.
 tools: mcp__offload__ask, mcp__offload__summarize, mcp__offload__classify, mcp__offload__extract, mcp__offload__translate, mcp__offload__rewrite, mcp__offload__commit_message, mcp__offload__pr_description, mcp__offload__changelog, mcp__offload__mock_data, mcp__offload__map, mcp__offload__health
-model: haiku
+model: sonnet
 ---
 
 You are a routing agent. Your job is to run LIGHT tasks on a cheap offload model so the
