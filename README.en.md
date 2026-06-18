@@ -174,6 +174,24 @@ Every generation tool accepts `provider` and `model` to override the configured 
 - Caps: `OFFLOAD_MAX_FILES` (default 50) and `OFFLOAD_MAX_CHARS` (default 100000) — over the limit returns a clear error.
 - Reads use the server process's own file permissions. If you point the server at a **cloud** provider, file contents are sent to that provider — keep sensitive files on a local backend.
 
+## Token savings
+
+Offloading saves frontier tokens only in certain shapes — but where it wins, it wins big. The rule: you save when the calling model **sends little and reads little back**. That's **generation** (small prompt → big output) and **file input via `path`** (the model sends a path, not the payload). Offloading a tiny inline chore costs *more* than just doing it — so do those on the frontier model, in batch, or autonomously.
+
+| Tool | Wins when | Example | Frontier → offloaded* | Saved |
+|------|-----------|---------|-----------------------|-------|
+| `summarize` | big file via `path` | 3k-token log → 60-token summary | 3,300 → 185 | **~94%** |
+| `extract` | big source via `path` | 1.5k-token doc → JSON | 1,750 → 175 | **~90%** |
+| `translate` | text/file via `path` | 1k-token doc | 6,000 → 1,125 | **~81%** |
+| `mock_data` | spec → data | 50 JSON records | 10,000 → 2,075 | **~79%** |
+| `commit_message` | diff via `path` | 500-token diff | 700 → 165 | **~76%** |
+| `ask` | small prompt → big output | 30 → 600 tokens | 3,030 → 750 | **~75%** |
+| `rewrite` | non-trivial text | 200-token paragraph | 1,200 → 325 | **~73%** |
+| `classify` | big file or batch | short message → do it inline | 60 → 302 | ✗ tiny · ~96% big |
+| `health` | diagnostic | — | — | n/a |
+
+<sub>* Weighted units, output counted ~5× input (its real cost ratio), vs the frontier model doing the task inline. Savings scale with size — a bigger file via `path` saves more, because the calling model never ingests it. With no frontier model in the loop (autonomous), the saving is 100%.</sub>
+
 ## Configuration
 
 All configuration is via environment variables — none are required if the defaults (a local LM Studio) suit you and you pass `model` per call.
