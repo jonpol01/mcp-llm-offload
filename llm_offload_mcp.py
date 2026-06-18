@@ -7,7 +7,7 @@
 
 Fronts an OpenAI-compatible chat-completions endpoint over stdio so Claude Code (or
 any MCP client) can delegate cheap, non-critical work — simple Q&A, summarizing,
-classifying, structured extraction — to a model you control instead of spending
+classifying, extraction, translation, rewriting, commit messages, mock data — to a model you control instead of spending
 frontier-model quota.
 
 Because LM Studio, Ollama, llama.cpp, OpenRouter, xAI (Grok), OpenAI, Groq, Together
@@ -316,6 +316,19 @@ def _isolate_json(raw: str) -> str:
     return s
 
 
+def _unfence(s: str) -> str:
+    """Strip a single wrapping ``` code fence (and any language tag) if present."""
+    s = s.strip()
+    if s.startswith("```") and s.endswith("```") and len(s) > 6:
+        inner = s[3:-3]
+        if "\n" in inner:
+            first, rest = inner.split("\n", 1)
+            if first.strip().isalpha():
+                inner = rest
+        return inner.strip()
+    return s
+
+
 # --- Tools -------------------------------------------------------------------
 
 _PROVIDER_HELP = (
@@ -487,6 +500,147 @@ async def extract(
     if raw.startswith("Error:"):
         return raw
     return _isolate_json(raw)
+
+
+@mcp.tool(
+    name="translate",
+    annotations={
+        "title": "Translate text or a file",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+)
+async def translate(
+    target: Annotated[str, Field(description="Target language, e.g. 'Japanese', 'English', 'fr'.", min_length=1)],
+    text: Annotated[Optional[str], Field(description="Text to translate. Provide this or `path`.")] = None,
+    path: Annotated[Optional[str], Field(description=_PATH_HELP)] = None,
+    style: Annotated[Optional[str], Field(description="Optional guidance, e.g. 'formal', 'casual', 'keep code and identifiers unchanged'.")] = None,
+    provider: Annotated[Optional[str], Field(description=_PROVIDER_HELP)] = None,
+    model: Annotated[Optional[str], Field(description=_MODEL_HELP)] = None,
+) -> str:
+    """Translate text (or a file/glob via `path`) into `target`, preserving formatting.
+
+    Returns:
+        str: the translation, or an 'Error: ...' string.
+    """
+    try:
+        src = _resolve_text(text, path)
+    except ValueError as e:
+        return f"Error: {e}"
+    style_hint = f" {style}." if style else ""
+    system = (
+        f"You are a professional translator. Translate the input into {target}. Preserve meaning, "
+        f"tone, Markdown structure, and code / inline code verbatim.{style_hint} Output only the "
+        "translation, with no preamble or commentary."
+    )
+    return await _complete(_build_messages(src, system), provider, model, 0.2, 4096)
+
+
+@mcp.tool(
+    name="rewrite",
+    annotations={
+        "title": "Rewrite / polish prose",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+)
+async def rewrite(
+    text: Annotated[Optional[str], Field(description="Text to rewrite. Provide this or `path`.")] = None,
+    tone: Annotated[Optional[str], Field(description="Optional goal/tone, e.g. 'more concise', 'formal', 'friendly', 'fix grammar only'.")] = None,
+    path: Annotated[Optional[str], Field(description=_PATH_HELP)] = None,
+    provider: Annotated[Optional[str], Field(description=_PROVIDER_HELP)] = None,
+    model: Annotated[Optional[str], Field(description=_MODEL_HELP)] = None,
+) -> str:
+    """Rewrite prose to be clearer/tighter — PR descriptions, commit bodies, docs, messages.
+
+    Returns:
+        str: the rewritten text, or an 'Error: ...' string.
+    """
+    try:
+        src = _resolve_text(text, path)
+    except ValueError as e:
+        return f"Error: {e}"
+    goal = tone or "clear, correct, and concise"
+    system = (
+        f"You are a careful editor. Rewrite the input to be {goal}, preserving meaning and any code "
+        "or Markdown. Output only the rewritten text, with no preamble or commentary."
+    )
+    return await _complete(_build_messages(src, system), provider, model, 0.4, 2048)
+
+
+@mcp.tool(
+    name="commit_message",
+    annotations={
+        "title": "Draft a commit message from a diff",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+)
+async def commit_message(
+    text: Annotated[Optional[str], Field(description="A git diff/patch. Provide this or `path` (e.g. a file you wrote `git diff` to).")] = None,
+    path: Annotated[Optional[str], Field(description=_PATH_HELP)] = None,
+    style: Annotated[Optional[str], Field(description="Optional style, e.g. 'conventional', 'one line', 'with a short body'.")] = None,
+    provider: Annotated[Optional[str], Field(description=_PROVIDER_HELP)] = None,
+    model: Annotated[Optional[str], Field(description=_MODEL_HELP)] = None,
+) -> str:
+    """Draft a Conventional Commits message from a git diff (inline `text` or via `path`).
+
+    Tip: `git diff --staged > /tmp/d.diff` then pass path='/tmp/d.diff' — the diff never has to
+    pass through the calling model's output.
+
+    Returns:
+        str: the commit message, or an 'Error: ...' string.
+    """
+    try:
+        src = _resolve_text(text, path)
+    except ValueError as e:
+        return f"Error: {e}"
+    style_hint = f" Style: {style}." if style else ""
+    system = (
+        "You are a commit-message writer. From the git diff, write a Conventional Commits message: a "
+        "`type(scope): summary` subject in imperative mood, <= 72 chars, plus a short body only if the "
+        f"change is non-trivial.{style_hint} Output only the commit message — no fences, no commentary."
+    )
+    raw = await _complete(_build_messages(src, system), provider, model, 0.3, 320)
+    return raw if raw.startswith("Error:") else _unfence(raw)
+
+
+@mcp.tool(
+    name="mock_data",
+    annotations={
+        "title": "Generate fake/sample data",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+)
+async def mock_data(
+    spec: Annotated[str, Field(description="What to generate, e.g. '20 users with id, name, email, signup_date'.", min_length=1)],
+    count: Annotated[int, Field(description="How many records to produce.", ge=1, le=500)] = 10,
+    fmt: Annotated[str, Field(description="Output format: 'json', 'ndjson', 'csv', or 'sql'.")] = "json",
+    provider: Annotated[Optional[str], Field(description=_PROVIDER_HELP)] = None,
+    model: Annotated[Optional[str], Field(description=_MODEL_HELP)] = None,
+) -> str:
+    """Generate fake/sample data from a spec. Small prompt, big output — a clear token win.
+
+    Returns:
+        str: the generated data, or an 'Error: ...' string.
+    """
+    system = (
+        f"You are a test-data generator. Produce {count} realistic but entirely FAKE records matching "
+        f"this spec, formatted as {fmt}. Vary the values. Output only the data — no prose, no commentary."
+    )
+    raw = await _complete(_build_messages(spec, system), provider, model, 0.8, min(8192, max(256, count * 60)))
+    if raw.startswith("Error:"):
+        return raw
+    return _isolate_json(raw) if fmt.lower() == "json" else _unfence(raw)
 
 
 @mcp.tool(

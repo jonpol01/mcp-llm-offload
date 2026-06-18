@@ -158,6 +158,10 @@ In Claude Code, run the `health` tool (or ask Claude to). You should see the res
 | `summarize` | `summarize(text?, max_words?, style?, path?, provider?, model?)` | Faithful summary of `text` or a file/glob (`path`). |
 | `classify` | `classify(labels[], text?, path?, provider?, model?)` | Single-label classification of `text` or a file; returns one of `labels`. |
 | `extract` | `extract(instructions, text?, path?, provider?, model?)` | Structured extraction from `text` or a file → clean JSON. |
+| `translate` | `translate(target, text?, path?, style?, provider?, model?)` | Translate `text` or a file/glob into `target`, preserving formatting. |
+| `rewrite` | `rewrite(text?, tone?, path?, provider?, model?)` | Polish/tighten prose — PR descriptions, commit bodies, docs. |
+| `commit_message` | `commit_message(text?, path?, style?, provider?, model?)` | Conventional-commit message from a diff (`text` or a diff file via `path`). |
+| `mock_data` | `mock_data(spec, count?, fmt?, provider?, model?)` | Generate fake JSON/CSV/SQL/NDJSON from a spec (small in → big out). |
 | `health` | `health(provider?)` | Reachability check + lists the backend's models. |
 
 Every generation tool accepts `provider` and `model` to override the configured default for that single call.
