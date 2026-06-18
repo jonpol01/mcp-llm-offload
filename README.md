@@ -1,92 +1,109 @@
+<p align="right"><b>日本語</b> · <a href="README.en.md">English</a></p>
+
 # mcp-llm-offload
 
-> An MCP server that offloads **light LLM work** from Claude (or any MCP client) to a model you control — a **local** LLM (LM Studio, Ollama, llama.cpp) or **any OpenAI-compatible provider** (OpenRouter, xAI Grok, OpenAI, Groq, Together…). Save frontier-model quota on the cheap, non-critical stuff.
+> Claude（や任意の MCP クライアント）の**軽量な LLM 作業**を、自分で管理するモデル — **ローカル** LLM（LM Studio・Ollama・llama.cpp）や **OpenAI 互換の任意プロバイダ**（OpenRouter・xAI Grok・OpenAI・Groq・Together など）— にオフロードする MCP サーバーです。安価で重要度の低い処理に、フロンティアモデルのクォータを浪費せずに済みます。
 
 [![CI](https://github.com/jonpol01/mcp-llm-offload/actions/workflows/ci.yml/badge.svg)](https://github.com/jonpol01/mcp-llm-offload/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![MCP](https://img.shields.io/badge/MCP-compatible-8A2BE2.svg)](https://modelcontextprotocol.io)
 [![Code style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#コントリビュート)
 
----
+<p align="center">
+  <img src="assets/flow.svg" alt="イベントが小さなローカル LLM のワーカーを起動し、メモリストアやツール（n8n・http）を使って Slack・Linear・GitHub・Discord に投稿する。Claude はループに含まれない" width="680">
+</p>
 
-## Why
+## なぜ
 
-Frontier models are great, but a lot of day-to-day agent work is *light*: summarize this log, classify this ticket, pull fields out of this blob, rephrase this sentence. Paying frontier-model rates (and quota) for that is wasteful.
+フロンティアモデルは強力ですが、エージェントの日常作業の多くは*軽量*です。ログの要約、チケットの分類、テキストからのフィールド抽出、一文の言い換え——こうした処理にフロンティアモデルの料金（とクォータ）を払うのは無駄です。
 
-`mcp-llm-offload` exposes a handful of MCP tools that forward those tasks to a backend of **your** choosing. Because LM Studio, Ollama, llama.cpp, OpenRouter, Grok, OpenAI, Groq and Together all speak the same `/v1/chat/completions` API, one tiny server talks to all of them — and you can switch backends with an env var or override **per call**.
+`mcp-llm-offload` は、これらのタスクを**あなたが選んだ**バックエンドへ転送する MCP ツールを少数だけ公開します。LM Studio・Ollama・llama.cpp・OpenRouter・Grok・OpenAI・Groq・Together はすべて同じ `/v1/chat/completions` API を話すため、この小さなサーバー 1 つですべてに対応できます。バックエンドは環境変数で切り替えられ、**呼び出しごと**に上書きすることも可能です。
 
-## Features
+## 機能
 
-- 🔀 **Provider-agnostic** — one server, any OpenAI-compatible endpoint. Presets for the common ones; bring-your-own for the rest.
-- 🏠 **Local-first** — defaults to a local LM Studio; no API key required for local backends.
-- 🎯 **Purpose-built tools** — `ask`, `summarize`, `classify`, `extract`, `health` — each shaped for a light task, not just a raw chat passthrough.
-- 🧭 **Per-call routing** — every tool takes optional `provider` and `model` args, so the cheap stuff goes local and the *slightly* harder stuff can go to Grok/OpenRouter without reconfiguring.
-- 🩺 **Actionable errors** — connection, timeout, auth, 404-model, and rate-limit failures come back as plain, fix-this-next strings instead of stack traces.
-- 📦 **Single file, zero install** — [PEP 723](https://peps.python.org/pep-0723/) inline deps mean `uv run llm_offload_mcp.py` just works.
-- 🤖 **Claude Code subagent included** — an optional `llm-offloader` agent that auto-routes light work for you.
+- 🔀 **プロバイダ非依存** — サーバーは 1 つ、相手は任意の OpenAI 互換エンドポイント。主要なものはプリセット済み、それ以外は自分で追加できます。
+- 🏠 **ローカルファースト** — 既定はローカルの LM Studio。ローカルバックエンドなら API キー不要です。
+- 🎯 **目的特化のツール** — `ask`・`summarize`・`classify`・`extract`・`health`。素のチャット中継ではなく、軽量タスク向けに整形されています。
+- 🧭 **呼び出しごとのルーティング** — 各ツールは `provider` と `model` を任意で受け取ります。安価な処理はローカルへ、*少しだけ*難しい処理は再設定なしで Grok / OpenRouter へ回せます。
+- 🩺 **実用的なエラー** — 接続・タイムアウト・認証・モデル 404・レート制限の失敗は、スタックトレースではなく「次にこうすればよい」という平易な文字列で返ります。
+- 📦 **単一ファイル・インストール不要** — [PEP 723](https://peps.python.org/pep-0723/) のインライン依存により `uv run llm_offload_mcp.py` だけで動きます。
+- 🤖 **Claude Code サブエージェント同梱** — 軽量作業を自動で振り分ける `llm-offloader` エージェントを任意で利用できます。
 
-## Supported providers
+## 推奨ローカルモデル
 
-| Provider     | Default endpoint                         | API key env           | Example model |
-|--------------|------------------------------------------|-----------------------|---------------|
-| `lmstudio`   | `http://localhost:1234/v1`               | — (none)              | *your loaded model* |
-| `ollama`     | `http://localhost:11434/v1`              | — (none)              | `llama3.1` |
-| `llamacpp`   | `http://localhost:8080/v1`               | — (none)              | *loaded model* |
+軽量なオフロード作業に大きなモデルは要りません。要約・分類・短い書き換えには `0.6b`〜`2b` クラスの指示チューニング済みモデルで十分です。おすすめの既定値:
+
+| モデル | 使いどころ |
+|--------|-----------|
+| `gemma-4-e2b-it` | **第一候補。** 最速。分類・要約・短い質問に最適。 |
+| `gemma-4-e4b-it` | 少し難しい言い換えや雑な入力に強く、それでも安価。 |
+
+Apple Silicon では LM Studio の MLX ビルド（例: `gemma-4-e2b-it-mlx`）を推奨します。同クラスの Qwen・Llama・Phi 系でも同等に動作します。バックエンドが提供する ID を `LLM_MODEL` に設定してください。
+
+## 対応プロバイダ
+
+| プロバイダ   | 既定のエンドポイント                     | API キー環境変数      | モデル例 |
+|--------------|------------------------------------------|-----------------------|----------|
+| `lmstudio`   | `http://localhost:1234/v1`               | —（不要）             | `gemma-4-e2b-it` |
+| `ollama`     | `http://localhost:11434/v1`              | —（不要）             | `llama3.1` |
+| `llamacpp`   | `http://localhost:8080/v1`               | —（不要）             | *読み込み中のモデル* |
 | `openrouter` | `https://openrouter.ai/api/v1`           | `OPENROUTER_API_KEY`  | `meta-llama/llama-3.3-70b-instruct` |
 | `grok`       | `https://api.x.ai/v1`                     | `XAI_API_KEY`         | `grok-2-latest` |
 | `openai`     | `https://api.openai.com/v1`              | `OPENAI_API_KEY`      | `gpt-4o-mini` |
 | `groq`       | `https://api.groq.com/openai/v1`         | `GROQ_API_KEY`        | `llama-3.1-8b-instant` |
 | `together`   | `https://api.together.xyz/v1`            | `TOGETHER_API_KEY`    | `meta-llama/Llama-3.3-70B-Instruct-Turbo` |
-| `deepinfra`  | `https://api.deepinfra.com/v1/openai`    | `DEEPINFRA_API_KEY`   | *see DeepInfra* |
+| `deepinfra`  | `https://api.deepinfra.com/v1/openai`    | `DEEPINFRA_API_KEY`   | *DeepInfra 参照* |
 | `mistral`    | `https://api.mistral.ai/v1`              | `MISTRAL_API_KEY`     | `mistral-small-latest` |
-| *anything else* | set `<NAME>_BASE_URL`                  | `<NAME>_API_KEY`      | *— any OpenAI-compatible service* |
+| *その他すべて* | `<NAME>_BASE_URL` を設定                | `<NAME>_API_KEY`      | *— 任意の OpenAI 互換サービス* |
 
-> Use any name you like for a custom provider: set `FOO_BASE_URL` (and `FOO_API_KEY` if needed), then call a tool with `provider="foo"`.
+> カスタムプロバイダは好きな名前で使えます。`FOO_BASE_URL`（必要なら `FOO_API_KEY`）を設定し、ツールを `provider="foo"` で呼び出してください。
 
-## How it works
+## 仕組み
 
 ```
-Claude Code ──stdio──▶ mcp-llm-offload ──HTTP /v1/chat/completions──▶ your backend
-   (frontier)            (this server)                                 (local / Grok / OpenRouter …)
+Claude Code ──stdio──▶ mcp-llm-offload ──HTTP /v1/chat/completions──▶ バックエンド
+ (フロンティア)          (このサーバー)                                (ローカル / Grok / OpenRouter …)
 ```
 
-The server is a thin, well-behaved MCP front-end. It resolves *which* backend and model to use (per call → env → preset), folds any system instruction into the user turn for maximum template compatibility, calls the endpoint, and returns clean text (or an `Error: …` string).
+このサーバーは薄く行儀のよい MCP フロントエンドです。使用するバックエンドとモデルを解決し（呼び出し → 環境変数 → プリセットの順）、テンプレート互換性を最大化するためにシステム指示をユーザーターンに畳み込み、エンドポイントを呼び出して、きれいなテキスト（または `Error: …` 文字列）を返します。
 
-## Quick start
+上の図は、これによって実現できる全体像です。小さなローカルモデルが自律的な「忍者」として日常的な雑務を端から端まで処理し、そのために Claude が一切呼ばれない、という構図です。
 
-### 1. Prerequisites
+## クイックスタート
 
-- [`uv`](https://docs.astral.sh/uv/) (recommended) — or Python 3.10+ with `pip`.
-- A backend: a running local server (e.g. [LM Studio](https://lmstudio.ai/) → **Developer ▸ Start Server**) **or** an API key for a hosted provider.
+### 1. 前提条件
 
-### 2. Get it
+- [`uv`](https://docs.astral.sh/uv/)（推奨）。または `pip` の使える Python 3.10+。
+- バックエンド: 起動中のローカルサーバー（例: [LM Studio](https://lmstudio.ai/) → **Developer ▸ Start Server**）、**または**ホスト型プロバイダの API キー。
+
+### 2. 取得
 
 ```bash
 git clone https://github.com/jonpol01/mcp-llm-offload.git
 cd mcp-llm-offload
 ```
 
-Run it standalone to confirm it starts (it serves MCP over stdio, so it will wait for a client — `Ctrl-C` to exit):
+起動を確認します（MCP を stdio で提供するため、クライアントを待って待機します。`Ctrl-C` で終了）:
 
 ```bash
 uv run llm_offload_mcp.py
 ```
 
-> No `uv`? `pip install mcp httpx` then `python llm_offload_mcp.py`.
+> `uv` がない場合は `pip install mcp httpx` のあと `python llm_offload_mcp.py`。
 
-### 3. Register with Claude Code
+### 3. Claude Code への登録
 
-The MCP **server name you choose here becomes the tool prefix** (`mcp__<name>__ask`, …). The bundled subagent expects the name **`offload`**, so use that unless you also edit the agent.
+ここで**指定したサーバー名がツールの接頭辞**（`mcp__<name>__ask` …）になります。同梱サブエージェントは名前 **`offload`** を前提とするため、エージェントを編集しない限りこの名前を使ってください。
 
-**Local LM Studio** (point it at a LAN host if LM Studio runs on another machine):
+**ローカル LM Studio**（別マシンで動かす場合は LAN ホストを指定）:
 
 ```bash
 claude mcp add offload \
   -e LLM_PROVIDER=lmstudio \
   -e LMSTUDIO_BASE_URL=http://localhost:1234/v1 \
-  -e LLM_MODEL=your-local-model-id \
+  -e LLM_MODEL=gemma-4-e2b-it \
   -- uv run /absolute/path/to/llm_offload_mcp.py
 ```
 
@@ -110,7 +127,7 @@ claude mcp add offload \
   -- uv run /absolute/path/to/llm_offload_mcp.py
 ```
 
-Or, equivalently, in a JSON MCP config (`.mcp.json`, Claude Desktop, etc.):
+JSON 形式の MCP 設定（`.mcp.json`、Claude Desktop など）でも同等です:
 
 ```json
 {
@@ -121,82 +138,71 @@ Or, equivalently, in a JSON MCP config (`.mcp.json`, Claude Desktop, etc.):
       "env": {
         "LLM_PROVIDER": "lmstudio",
         "LMSTUDIO_BASE_URL": "http://localhost:1234/v1",
-        "LLM_MODEL": "your-local-model-id"
+        "LLM_MODEL": "gemma-4-e2b-it"
       }
     }
   }
 }
 ```
 
-### 4. Verify
+### 4. 動作確認
 
-In Claude Code, run the `health` tool (or ask Claude to). You should see the resolved provider, base URL, and the list of models the backend reports.
+Claude Code で `health` ツールを実行（または Claude に頼む）してください。解決されたプロバイダ・ベース URL・バックエンドが報告するモデル一覧が表示されます。
 
-## Tools
+## ツール
 
-| Tool | Signature | Purpose |
-|------|-----------|---------|
-| `ask` | `ask(prompt, system?, provider?, model?, temperature?, max_tokens?)` | Free-form light generation (Q&A, rephrase, draft). |
-| `summarize` | `summarize(text, max_words?, style?, provider?, model?)` | Faithful summary, length- and style-bounded. |
-| `classify` | `classify(text, labels[], provider?, model?)` | Single-label classification; returns one of `labels`. |
-| `extract` | `extract(text, instructions, provider?, model?)` | Structured extraction → clean JSON string. |
-| `health` | `health(provider?)` | Reachability check + lists the backend's models. |
+| ツール | シグネチャ | 用途 |
+|--------|-----------|------|
+| `ask` | `ask(prompt, system?, provider?, model?, temperature?, max_tokens?)` | 自由形式の軽量生成（Q&A・言い換え・下書き）。 |
+| `summarize` | `summarize(text, max_words?, style?, provider?, model?)` | 長さとスタイルを抑えた忠実な要約。 |
+| `classify` | `classify(text, labels[], provider?, model?)` | 単一ラベル分類。`labels` のいずれかを返す。 |
+| `extract` | `extract(text, instructions, provider?, model?)` | 構造化抽出 → きれいな JSON 文字列。 |
+| `health` | `health(provider?)` | 到達性チェックとバックエンドのモデル一覧。 |
 
-Every generation tool accepts `provider` and `model` to override the configured default for that single call.
+生成系ツールはいずれも `provider` と `model` を受け取り、その 1 回の呼び出しに限り既定を上書きできます。
 
-## Configuration
+## 設定
 
-All configuration is via environment variables — none are required if the defaults (a local LM Studio) suit you and you pass `model` per call.
+設定はすべて環境変数で行います。既定（ローカル LM Studio）で問題なく、`model` を呼び出しごとに渡すなら、必須の変数はありません。
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `LLM_PROVIDER` | Default provider name (see table). | `lmstudio` |
-| `LLM_MODEL` | Default model id (as the provider names it). | *(unset)* |
-| `LLM_TIMEOUT` | Request timeout, seconds. | `300` |
-| `<PROVIDER>_BASE_URL` | Override a provider's endpoint, e.g. `LMSTUDIO_BASE_URL`. | preset |
-| `<PROVIDER>_API_KEY` | A provider's API key, e.g. `OPENROUTER_API_KEY`. | conventional env / `LLM_API_KEY` |
-| `<PROVIDER>_MODEL` | Default model for a specific provider. | `LLM_MODEL` |
-| `LLM_BASE_URL` / `LLM_API_KEY` | Generic fallbacks for the default provider. | — |
-| `OPENROUTER_REFERER` / `OPENROUTER_TITLE` | Optional OpenRouter ranking headers. | — |
+| 変数 | 説明 | 既定値 |
+|------|------|--------|
+| `LLM_PROVIDER` | 既定のプロバイダ名（表を参照）。 | `lmstudio` |
+| `LLM_MODEL` | 既定のモデル ID（プロバイダの呼称どおり）。 | *(未設定)* |
+| `LLM_TIMEOUT` | リクエストのタイムアウト（秒）。 | `300` |
+| `<PROVIDER>_BASE_URL` | プロバイダのエンドポイント上書き（例: `LMSTUDIO_BASE_URL`）。 | プリセット |
+| `<PROVIDER>_API_KEY` | プロバイダの API キー（例: `OPENROUTER_API_KEY`）。 | 慣例の環境変数 / `LLM_API_KEY` |
+| `<PROVIDER>_MODEL` | 特定プロバイダの既定モデル。 | `LLM_MODEL` |
+| `LLM_BASE_URL` / `LLM_API_KEY` | 既定プロバイダ向けの汎用フォールバック。 | — |
+| `OPENROUTER_REFERER` / `OPENROUTER_TITLE` | OpenRouter のランキング用ヘッダ（任意）。 | — |
 
-See [`.env.example`](.env.example) for a copy-paste starting point.
+コピペ用のひな形は [`.env.example`](.env.example) を参照してください。
 
-## The Claude Code subagent (optional)
+## Claude Code サブエージェント（任意）
 
-[`agents/llm-offloader.md`](agents/llm-offloader.md) is a ready-made subagent that proactively routes light work to this server and hands anything heavy or correctness-critical back to the main agent. It runs on a cheap dispatch model (`haiku`) so the *routing* costs almost nothing and the *work* lands on your backend.
-
-Install it by copying into your agents directory:
+[`agents/llm-offloader.md`](agents/llm-offloader.md) は、軽量作業をこのサーバーへ積極的に振り分け、重い処理や正確性が重要な処理はメインエージェントへ戻す、すぐ使えるサブエージェントです。安価なディスパッチモデル（`haiku`）で動くため*振り分け*のコストはごくわずかで、*実作業*はあなたのバックエンドに載ります。
 
 ```bash
-# user-wide
+# ユーザー全体
 cp agents/llm-offloader.md ~/.claude/agents/
-# or per-project
+# またはプロジェクト単位
 mkdir -p .claude/agents && cp agents/llm-offloader.md .claude/agents/
 ```
 
-> Its `tools:` list references `mcp__offload__*`, so it requires the server to be registered under the name **`offload`**.
+> `tools:` は `mcp__offload__*` を参照するため、サーバーを名前 **`offload`** で登録しておく必要があります。
 
-## Examples
+## トラブルシューティング
 
-Ask Claude things like:
+| 症状 | 対処 |
+|------|------|
+| `could not reach the endpoint` | バックエンド未起動 / URL 誤り。LM Studio は **Start Server**、LAN 利用なら `0.0.0.0` にバインドし、`LMSTUDIO_BASE_URL` を設定。 |
+| `401/403 authentication failure` | API キーが未設定/無効。プロバイダの `*_API_KEY` を設定。 |
+| `404 … Model '…' may not exist` | モデル ID が誤り、または未読み込み。`health` で実際の提供モデルを確認。 |
+| `429 rate-limited` | 時間を置く、または `provider=` で別プロバイダへ回す。 |
+| `timed out` | 入力が大きい / モデルが遅い・読み込み中。`LLM_TIMEOUT` を上げる。 |
+| サブエージェントにツールが無い | サーバーが `offload` という名前で登録されていない（または未登録）。 |
 
-- *"Summarize this 4k-word changelog into 5 bullets — offload it."*
-- *"Classify each of these 30 support messages as bug / feature / question using the local model."*
-- *"Extract name, date, and total from this receipt text as JSON via the offloader."*
-- *"Use the offloader on OpenRouter to rephrase this paragraph."* (per-call `provider="openrouter"`)
-
-## Troubleshooting
-
-| Symptom | Likely fix |
-|---------|------------|
-| `could not reach the endpoint` | Backend isn't running / wrong URL. For LM Studio, **Start Server** and bind to `0.0.0.0` for LAN access; set `LMSTUDIO_BASE_URL`. |
-| `401/403 authentication failure` | Missing/invalid API key — set the provider's `*_API_KEY`. |
-| `404 … Model '…' may not exist` | Model id is wrong or not loaded. Run `health` to list what the backend actually serves. |
-| `429 rate-limited` | Back off, or pass `provider=` to route this call elsewhere. |
-| `timed out` | Large input or a slow/loading model — raise `LLM_TIMEOUT`. |
-| Subagent has no tools | Server isn't registered under the name `offload` (or not registered at all). |
-
-## Development
+## 開発
 
 ```bash
 uvx ruff check .          # lint
@@ -204,12 +210,12 @@ uv run --with mcp --with httpx python -c \
   "import importlib.util as u; s=u.spec_from_file_location('m','llm_offload_mcp.py'); m=u.module_from_spec(s); s.loader.exec_module(m); print('ok', m.mcp.name)"
 ```
 
-CI (GitHub Actions) runs the same lint + import smoke test on every push and PR.
+CI（GitHub Actions）は、push と PR のたびに同じ lint とインポートのスモークテストを実行します。
 
-## Contributing
+## コントリビュート
 
-Issues and PRs welcome. Keep the server single-file and provider-neutral; new providers are usually just one row in the `PROVIDERS` registry.
+Issue・PR を歓迎します。サーバーは単一ファイル・プロバイダ中立を保ってください。新しいプロバイダは通常 `PROVIDERS` レジストリに 1 行追加するだけです。
 
-## License
+## ライセンス
 
 [MIT](LICENSE) © John Paul Soliva

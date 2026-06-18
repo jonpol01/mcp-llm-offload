@@ -1,0 +1,98 @@
+<svg viewBox="0 0 680 520" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>How local LLM ninjas offload routine work without Claude</title>
+<desc>Left to right: events (CI, PR, cron) trigger a ninja daemon on a generic local host running small 0.6 to 2b LLMs. The daemon reads and writes a memory store and calls tools like n8n and http apis, then posts to Slack, Linear, GitHub and Discord. Claude is not in the loop, so it costs zero subscription tokens.</desc>
+<rect x="1" y="1" width="678" height="518" rx="16" fill="#FAF9F5" stroke="#E7E4DC" stroke-width="1.5"/>
+<g font-family="-apple-system, system-ui, 'Segoe UI', Helvetica, Arial, sans-serif">
+
+<g opacity="0.85">
+<rect x="232" y="14" width="216" height="52" rx="12" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="1.2" stroke-dasharray="5 4"/>
+<line x1="268" y1="41" x2="280" y2="41" stroke="#888780" stroke-width="1.4"/>
+<line x1="274" y1="35" x2="274" y2="47" stroke="#888780" stroke-width="1.4"/>
+<line x1="269.7" y1="36.7" x2="278.3" y2="45.3" stroke="#888780" stroke-width="1.4"/>
+<line x1="278.3" y1="36.7" x2="269.7" y2="45.3" stroke="#888780" stroke-width="1.4"/>
+<text x="296" y="39" font-size="14" fill="#5F5E5A">claude</text>
+<text x="296" y="56" font-size="12" fill="#888780">not in this loop</text>
+</g>
+
+<line x1="340" y1="68" x2="340" y2="116" stroke="#B4B2A9" stroke-width="1.3" stroke-dasharray="4 3"/>
+<line x1="334" y1="86" x2="346" y2="98" stroke="#E24B4A" stroke-width="2" stroke-linecap="round"/>
+<line x1="346" y1="86" x2="334" y2="98" stroke="#E24B4A" stroke-width="2" stroke-linecap="round"/>
+<text x="353" y="96" font-size="12" fill="#888780">no api calls</text>
+
+<text x="80" y="156" font-size="12" fill="#888780" text-anchor="middle">triggers</text>
+<rect x="14" y="171" width="132" height="34" rx="8" fill="#F1EFE8" stroke="#C7C5BB" stroke-width="1.2"/>
+<text x="80" y="192" font-size="14" fill="#2C2C2A" text-anchor="middle">ci passes</text>
+<rect x="14" y="212" width="132" height="34" rx="8" fill="#F1EFE8" stroke="#C7C5BB" stroke-width="1.2"/>
+<text x="80" y="233" font-size="14" fill="#2C2C2A" text-anchor="middle">pr merged</text>
+<rect x="14" y="253" width="132" height="34" rx="8" fill="#F1EFE8" stroke="#C7C5BB" stroke-width="1.2"/>
+<text x="80" y="274" font-size="14" fill="#2C2C2A" text-anchor="middle">9am cron</text>
+
+<line x1="148" y1="229" x2="185" y2="229" stroke="#D85A30" stroke-width="2"/>
+<path d="M192 229 L185 225 L185 233 Z" fill="#D85A30"/>
+<line x1="480" y1="229" x2="513" y2="229" stroke="#D85A30" stroke-width="2"/>
+<path d="M520 229 L513 225 L513 233 Z" fill="#D85A30"/>
+
+<rect x="196" y="120" width="280" height="210" rx="14" fill="#FAECE7" stroke="#D85A30" stroke-width="1.5"/>
+<text x="336" y="146" font-size="14" fill="#712B13" text-anchor="middle">ninja dojo</text>
+<text x="336" y="164" font-size="12" fill="#993C1D" text-anchor="middle">local host · xx.xx.xx.xx</text>
+<text x="336" y="300" font-size="12" fill="#993C1D" text-anchor="middle">code acts, ninja writes the words</text>
+<text x="336" y="317" font-size="12" fill="#993C1D" text-anchor="middle">small local llms · 0.6–2b</text>
+
+<ellipse cx="266" cy="238" rx="16" ry="14" fill="#D85A30" stroke="#993C1D" stroke-width="1.5"/>
+<rect x="257" y="250" width="7" height="6" rx="2" fill="#712B13"/>
+<rect x="268" y="250" width="7" height="6" rx="2" fill="#712B13"/>
+<circle cx="266" cy="210" r="15" fill="#D85A30" stroke="#993C1D" stroke-width="1.5"/>
+<rect x="251" y="204" width="30" height="10" rx="4" fill="#FAECE7"/>
+<ellipse cx="260" cy="209" rx="2.3" ry="3.2" fill="#4A1B0C"/>
+<ellipse cx="272" cy="209" rx="2.3" ry="3.2" fill="#4A1B0C"/>
+<path d="M279 205 l12 -4 l-3 6 l9 1 l-12 5 Z" fill="#993C1D"/>
+
+<ellipse cx="336" cy="238" rx="16" ry="14" fill="#D85A30" stroke="#993C1D" stroke-width="1.5"/>
+<rect x="327" y="250" width="7" height="6" rx="2" fill="#712B13"/>
+<rect x="338" y="250" width="7" height="6" rx="2" fill="#712B13"/>
+<circle cx="336" cy="210" r="15" fill="#D85A30" stroke="#993C1D" stroke-width="1.5"/>
+<rect x="321" y="204" width="30" height="10" rx="4" fill="#FAECE7"/>
+<ellipse cx="330" cy="209" rx="2.3" ry="3.2" fill="#4A1B0C"/>
+<ellipse cx="342" cy="209" rx="2.3" ry="3.2" fill="#4A1B0C"/>
+<path d="M349 205 l12 -4 l-3 6 l9 1 l-12 5 Z" fill="#993C1D"/>
+<path d="M372 224 L374.5 228 L378 229.5 L374.5 231 L372 235 L369.5 231 L366 229.5 L369.5 228 Z" fill="#712B13"/>
+
+<ellipse cx="406" cy="238" rx="16" ry="14" fill="#D85A30" stroke="#993C1D" stroke-width="1.5"/>
+<rect x="397" y="250" width="7" height="6" rx="2" fill="#712B13"/>
+<rect x="408" y="250" width="7" height="6" rx="2" fill="#712B13"/>
+<circle cx="406" cy="210" r="15" fill="#D85A30" stroke="#993C1D" stroke-width="1.5"/>
+<rect x="391" y="204" width="30" height="10" rx="4" fill="#FAECE7"/>
+<ellipse cx="400" cy="209" rx="2.3" ry="3.2" fill="#4A1B0C"/>
+<ellipse cx="412" cy="209" rx="2.3" ry="3.2" fill="#4A1B0C"/>
+<path d="M419 205 l12 -4 l-3 6 l9 1 l-12 5 Z" fill="#993C1D"/>
+
+<text x="594" y="144" font-size="12" fill="#888780" text-anchor="middle">post to</text>
+<rect x="522" y="156" width="144" height="30" rx="8" fill="#F1EFE8" stroke="#C7C5BB" stroke-width="1.2"/>
+<text x="594" y="176" font-size="14" fill="#2C2C2A" text-anchor="middle">slack</text>
+<rect x="522" y="192" width="144" height="30" rx="8" fill="#F1EFE8" stroke="#C7C5BB" stroke-width="1.2"/>
+<text x="594" y="212" font-size="14" fill="#2C2C2A" text-anchor="middle">linear</text>
+<rect x="522" y="228" width="144" height="30" rx="8" fill="#F1EFE8" stroke="#C7C5BB" stroke-width="1.2"/>
+<text x="594" y="248" font-size="14" fill="#2C2C2A" text-anchor="middle">github</text>
+<rect x="522" y="264" width="144" height="30" rx="8" fill="#F1EFE8" stroke="#C7C5BB" stroke-width="1.2"/>
+<text x="594" y="284" font-size="14" fill="#2C2C2A" text-anchor="middle">discord</text>
+
+<line x1="336" y1="339" x2="336" y2="356" stroke="#D85A30" stroke-width="2"/>
+<path d="M336 332 L332 339 L340 339 Z" fill="#D85A30"/>
+<path d="M336 363 L332 356 L340 356 Z" fill="#D85A30"/>
+
+<rect x="200" y="366" width="96" height="46" rx="8" fill="#FAECE7" stroke="#D85A30" stroke-width="1.3"/>
+<text x="262" y="393" font-size="14" fill="#712B13" text-anchor="middle">memory</text>
+<ellipse cx="218" cy="396" rx="9" ry="3.5" fill="#D85A30" stroke="#712B13" stroke-width="1.2"/>
+<rect x="209" y="379" width="18" height="17" fill="#D85A30" stroke="#712B13" stroke-width="1.2"/>
+<ellipse cx="218" cy="379" rx="9" ry="3.5" fill="#F0997B" stroke="#712B13" stroke-width="1.2"/>
+<rect x="304" y="366" width="80" height="46" rx="8" fill="#F1EFE8" stroke="#C7C5BB" stroke-width="1.2"/>
+<text x="344" y="393" font-size="14" fill="#2C2C2A" text-anchor="middle">n8n</text>
+<rect x="392" y="366" width="84" height="46" rx="8" fill="#F1EFE8" stroke="#C7C5BB" stroke-width="1.2"/>
+<text x="434" y="393" font-size="14" fill="#2C2C2A" text-anchor="middle">http / api</text>
+
+<text x="336" y="430" font-size="12" fill="#888780" text-anchor="middle">tools the ninjas call</text>
+
+<rect x="196" y="448" width="280" height="40" rx="12" fill="#EAF3DE" stroke="#639922" stroke-width="1.3"/>
+<text x="336" y="473" font-size="14" fill="#27500A" text-anchor="middle">0 claude tokens · your hardware</text>
+</g>
+</svg>
