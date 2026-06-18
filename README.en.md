@@ -157,11 +157,14 @@ In Claude Code, run the `health` tool (or ask Claude to). You should see the res
 | `ask` | `ask(prompt, system?, path?, provider?, model?, temperature?, max_tokens?)` | Free-form light generation; `path` folds in a file as context. |
 | `summarize` | `summarize(text?, max_words?, style?, path?, provider?, model?)` | Faithful summary of `text` or a file/glob (`path`). |
 | `classify` | `classify(labels[], text?, path?, provider?, model?)` | Single-label classification of `text` or a file; returns one of `labels`. |
-| `extract` | `extract(instructions, text?, path?, provider?, model?)` | Structured extraction from `text` or a file → clean JSON. |
+| `extract` | `extract(instructions, text?, path?, schema?, provider?, model?)` | Structured extraction → clean JSON; optional `schema`, with one local repair retry on bad JSON. |
 | `translate` | `translate(target, text?, path?, style?, provider?, model?)` | Translate `text` or a file/glob into `target`, preserving formatting. |
 | `rewrite` | `rewrite(text?, tone?, path?, provider?, model?)` | Polish/tighten prose — PR descriptions, commit bodies, docs. |
 | `commit_message` | `commit_message(text?, path?, style?, provider?, model?)` | Conventional-commit message from a diff (`text` or a diff file via `path`). |
 | `mock_data` | `mock_data(spec, count?, fmt?, provider?, model?)` | Generate fake JSON/CSV/SQL/NDJSON from a spec (small in → big out). |
+| `pr_description` | `pr_description(text?, path?, intent?, provider?, model?)` | Draft a PR description from a diff; descriptive only, never claims correctness. |
+| `changelog` | `changelog(text?, path?, style?, version?, provider?, model?)` | Group a git log into Added/Changed/Fixed release notes. |
+| `map` | `map(op, path, …op args)` | Run one op (summarize/classify/extract/translate/rewrite) on **each** file of a glob → `{file: result}`. One call, not N. |
 | `health` | `health(provider?)` | Reachability check + lists the backend's models. |
 
 Every generation tool accepts `provider` and `model` to override the configured default for that single call.
@@ -185,6 +188,9 @@ Offloading saves frontier tokens only in certain shapes — but where it wins, i
 | `translate` | text/file via `path` | 1k-token doc | 6,000 → 1,125 | **~81%** |
 | `mock_data` | spec → data | 50 JSON records | 10,000 → 2,075 | **~79%** |
 | `commit_message` | diff via `path` | 500-token diff | 700 → 165 | **~76%** |
+| `pr_description` | diff via `path` | 500-token diff → description | 1,500 → 325 | **~78%** |
+| `changelog` | git log (inline/`path`) | 30 commits → grouped notes | 1,550 → 375 | **~76%** |
+| `map` | N files in one call | 30 logs → 30 summaries | 30 calls → 1 | **~30× fewer round-trips** |
 | `ask` | small prompt → big output | 30 → 600 tokens | 3,030 → 750 | **~75%** |
 | `rewrite` | non-trivial text | 200-token paragraph | 1,200 → 325 | **~73%** |
 | `classify` | big file or batch | short message → do it inline | 60 → 302 | ✗ tiny · ~96% big |

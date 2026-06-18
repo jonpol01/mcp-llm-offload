@@ -7,7 +7,7 @@
 
 Fronts an OpenAI-compatible chat-completions endpoint over stdio so Claude Code (or
 any MCP client) can delegate cheap, non-critical work — simple Q&A, summarizing,
-classifying, extraction, translation, rewriting, commit messages, mock data — to a model you control instead of spending
+classifying, extraction, translation, rewriting, commit messages, PR descriptions, changelogs, mock data, per-file batch mapping — to a model you control instead of spending
 frontier-model quota.
 
 Because LM Studio, Ollama, llama.cpp, OpenRouter, xAI (Grok), OpenAI, Groq, Together
@@ -45,11 +45,13 @@ Run:
 
 from __future__ import annotations
 
+import asyncio
 import glob
 import json
 import os
+import re
 from pathlib import Path
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Literal, Optional
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -80,6 +82,7 @@ DEFAULT_MODEL: Optional[str] = os.environ.get("LLM_MODEL")
 TIMEOUT: float = float(os.environ.get("LLM_TIMEOUT", "300"))
 MAX_PATH_FILES: int = int(os.environ.get("OFFLOAD_MAX_FILES", "50"))
 MAX_PATH_CHARS: int = int(os.environ.get("OFFLOAD_MAX_CHARS", "100000"))
+MAP_CONCURRENCY: int = int(os.environ.get("OFFLOAD_MAP_CONCURRENCY", "4"))
 
 mcp = FastMCP("llm_offload_mcp")
 
@@ -147,6 +150,19 @@ def _build_messages(prompt: str, system: Optional[str]) -> List[dict]:
     return [{"role": "user", "content": content}]
 
 
+def _glob_files(pattern: str) -> List[str]:
+    """Expand a path/glob to a sorted list of existing files (enforcing the file-count cap)."""
+    matches = sorted(p for p in glob.glob(pattern, recursive=True) if os.path.isfile(p))
+    if not matches:
+        raise ValueError(f"no file matches path '{pattern}'. Pass an existing file path or glob.")
+    if len(matches) > MAX_PATH_FILES:
+        raise ValueError(
+            f"path '{pattern}' matched {len(matches)} files (limit {MAX_PATH_FILES}). "
+            "Narrow the glob or raise OFFLOAD_MAX_FILES."
+        )
+    return matches
+
+
 def _read_path(pattern: str) -> str:
     """Read a file path or glob locally and return its text.
 
@@ -157,14 +173,7 @@ def _read_path(pattern: str) -> str:
     Raises:
         ValueError: no match, too many files, unreadable file, or over the size cap.
     """
-    matches = sorted(p for p in glob.glob(pattern, recursive=True) if os.path.isfile(p))
-    if not matches:
-        raise ValueError(f"no file matches path '{pattern}'. Pass an existing file path or glob.")
-    if len(matches) > MAX_PATH_FILES:
-        raise ValueError(
-            f"path '{pattern}' matched {len(matches)} files (limit {MAX_PATH_FILES}). "
-            "Narrow the glob or raise OFFLOAD_MAX_FILES."
-        )
+    matches = _glob_files(pattern)
     parts: List[str] = []
     total = 0
     for fp in matches:
@@ -292,6 +301,21 @@ async def _complete(
         return _handle_error(e, base_url, mdl)
 
 
+def _try_load(s: str) -> tuple[bool, Optional[str]]:
+    """Parse s as JSON, tolerating trailing commas. Returns (ok, canonical_json)."""
+    for candidate in (s, re.sub(r",(\s*[}\]])", r"\1", s)):
+        try:
+            return True, json.dumps(json.loads(candidate))
+        except (ValueError, TypeError):
+            continue
+    return False, None
+
+
+def _is_json(s: str) -> bool:
+    """True if s parses as JSON (trailing commas tolerated)."""
+    return _try_load(s)[0]
+
+
 def _isolate_json(raw: str) -> str:
     """Best-effort: return a clean JSON string from a possibly-noisy reply."""
     s = raw.strip()
@@ -300,19 +324,16 @@ def _isolate_json(raw: str) -> str:
         if len(parts) >= 2:
             s = parts[1]
         s = s.removeprefix("json").strip()
-    try:
-        return json.dumps(json.loads(s))
-    except (ValueError, TypeError):
-        pass
+    ok, out = _try_load(s)
+    if ok:
+        return out
     # Fall back to the outermost {...} object or [...] array and try each.
     for open_c, close_c in (("{", "}"), ("[", "]")):
         start, end = s.find(open_c), s.rfind(close_c)
         if start != -1 and end != -1 and end > start:
-            candidate = s[start : end + 1]
-            try:
-                return json.dumps(json.loads(candidate))
-            except (ValueError, TypeError):
-                continue
+            ok, out = _try_load(s[start : end + 1])
+            if ok:
+                return out
     return s
 
 
@@ -478,10 +499,14 @@ async def extract(
     instructions: Annotated[str, Field(description="What to extract: plain language or a field list, e.g. 'name, date, total amount'.", min_length=1)],
     text: Annotated[Optional[str], Field(description="Source text to extract from. Provide this or `path`.")] = None,
     path: Annotated[Optional[str], Field(description=_PATH_HELP)] = None,
+    schema: Annotated[Optional[str], Field(description="Optional exact field list or tiny JSON shape the output must match, e.g. 'id, name, amount' or '{id, tags[]}'.")] = None,
     provider: Annotated[Optional[str], Field(description=_PROVIDER_HELP)] = None,
     model: Annotated[Optional[str], Field(description=_MODEL_HELP)] = None,
 ) -> str:
     """Extract structured data as JSON from text (or a file via `path`) using the offload model.
+
+    If the first reply isn't valid JSON, one bounded local repair call is made before giving up, so a
+    small model's occasional malformed output is fixed locally instead of on the frontier model.
 
     Returns:
         str: a JSON string (best-effort; fences and stray prose are stripped), or an
@@ -491,15 +516,32 @@ async def extract(
         src = _resolve_text(text, path)
     except ValueError as e:
         return f"Error: {e}"
+    schema_hint = f" Return JSON matching exactly these fields/shape: {schema}." if schema else ""
     system = (
         "You are a data extraction engine. Extract the requested fields from the input and "
-        "respond with a single valid JSON value only — no markdown, no commentary. "
+        f"respond with a single valid JSON value only — no markdown, no commentary.{schema_hint} "
         f"Fields/instructions: {instructions}"
     )
     raw = await _complete(_build_messages(src, system), provider, model, 0.0, 1024)
     if raw.startswith("Error:"):
         return raw
-    return _isolate_json(raw)
+    cleaned = _isolate_json(raw)
+    if _is_json(cleaned):
+        return cleaned
+    # One bounded local repair pass — cheap on the offload model, avoids a frontier redo.
+    repair = await _complete(
+        _build_messages(
+            raw,
+            "Your previous output was not valid JSON. Return ONLY the JSON value for the requested "
+            "fields — no prose, no markdown, no trailing commas.",
+        ),
+        provider, model, 0.0, 1024,
+    )
+    if not repair.startswith("Error:"):
+        repaired = _isolate_json(repair)
+        if _is_json(repaired):
+            return repaired
+    return cleaned
 
 
 @mcp.tool(
@@ -644,6 +686,149 @@ async def mock_data(
     if raw.startswith("Error:"):
         return raw
     return _isolate_json(raw) if fmt.lower() == "json" else _unfence(raw)
+
+
+@mcp.tool(
+    name="pr_description",
+    annotations={
+        "title": "Draft a PR description from a diff",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+)
+async def pr_description(
+    text: Annotated[Optional[str], Field(description="A git diff/patch. Provide this or `path`.")] = None,
+    path: Annotated[Optional[str], Field(description=_PATH_HELP)] = None,
+    intent: Annotated[Optional[str], Field(description="Optional one-line author intent/motivation to include under 'Why'.")] = None,
+    provider: Annotated[Optional[str], Field(description=_PROVIDER_HELP)] = None,
+    model: Annotated[Optional[str], Field(description=_MODEL_HELP)] = None,
+) -> str:
+    """Draft a pull-request description from a git diff (inline `text` or via `path`).
+
+    Tip: `git diff origin/main > /tmp/pr.diff` then pass path='/tmp/pr.diff'.
+
+    Returns:
+        str: a Markdown PR description, or an 'Error: ...' string.
+    """
+    try:
+        src = _resolve_text(text, path)
+    except ValueError as e:
+        return f"Error: {e}"
+    intent_hint = f" The author's stated intent: {intent}." if intent else ""
+    system = (
+        "You are writing a pull-request description from a git diff. Produce a one-line summary, a "
+        "'## What changed' bullet list, and a '## Test plan' stub; add a short '## Why' only if intent "
+        f"is given.{intent_hint} Describe the diff faithfully — narrate what changed. Never assert the "
+        "change is correct, complete, or bug-free, and never invent motivation not present in the diff "
+        "or intent. Output only the description in Markdown."
+    )
+    raw = await _complete(_build_messages(src, system), provider, model, 0.3, 700)
+    return raw if raw.startswith("Error:") else _unfence(raw)
+
+
+@mcp.tool(
+    name="changelog",
+    annotations={
+        "title": "Group commits into release notes",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+)
+async def changelog(
+    text: Annotated[Optional[str], Field(description="A list of commit subjects / git log. Provide this or `path`.")] = None,
+    path: Annotated[Optional[str], Field(description=_PATH_HELP)] = None,
+    style: Annotated[str, Field(description="Output style: 'keepachangelog', 'plain', or 'marketing-lite'.")] = "keepachangelog",
+    version: Annotated[Optional[str], Field(description="Optional version label to use verbatim as the heading, e.g. 'v2.4.0'.")] = None,
+    provider: Annotated[Optional[str], Field(description=_PROVIDER_HELP)] = None,
+    model: Annotated[Optional[str], Field(description=_MODEL_HELP)] = None,
+) -> str:
+    """Group commit subjects (inline or a `git log` file via `path`) into release notes.
+
+    Tip: `git log --oneline PREV..HEAD > /tmp/log.txt` then pass path='/tmp/log.txt'.
+
+    Returns:
+        str: Markdown release notes, or an 'Error: ...' string.
+    """
+    try:
+        src = _resolve_text(text, path)
+    except ValueError as e:
+        return f"Error: {e}"
+    version_hint = (
+        f" Use the version label '{version}' verbatim as the top heading."
+        if version else " Do not invent a version number or header."
+    )
+    system = (
+        f"You are writing release notes from a list of commit subjects, in '{style}' style. Group them "
+        "under Added / Changed / Fixed (and Removed / Security if clearly present). Rephrase each subject "
+        f"faithfully and concisely. Never invent features, fixes, or versions not present in the input.{version_hint} "
+        "Output only the release notes in Markdown."
+    )
+    raw = await _complete(_build_messages(src, system), provider, model, 0.3, 800)
+    return raw if raw.startswith("Error:") else _unfence(raw)
+
+
+@mcp.tool(
+    name="map",
+    annotations={
+        "title": "Run an op on each file in a glob",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+)
+async def map_each(
+    op: Annotated[Literal["summarize", "classify", "extract", "translate", "rewrite"], Field(description="Which op to run on each matched file.")],
+    path: Annotated[str, Field(description="A file path or glob (e.g. 'logs/*.txt'). Each match is processed SEPARATELY, in parallel.", min_length=1)],
+    labels: Annotated[Optional[List[str]], Field(description="Labels for op='classify'.")] = None,
+    instructions: Annotated[Optional[str], Field(description="Instructions for op='extract'.")] = None,
+    target: Annotated[Optional[str], Field(description="Target language for op='translate'.")] = None,
+    max_words: Annotated[int, Field(description="Max words for op='summarize'.", ge=10, le=1000)] = 120,
+    style: Annotated[Optional[str], Field(description="Style for op='summarize'/'translate'.")] = None,
+    tone: Annotated[Optional[str], Field(description="Tone for op='rewrite'.")] = None,
+    provider: Annotated[Optional[str], Field(description=_PROVIDER_HELP)] = None,
+    model: Annotated[Optional[str], Field(description=_MODEL_HELP)] = None,
+) -> str:
+    """Run one existing op on EACH file matched by `path`, returning a JSON map {file: result}.
+
+    Unlike passing a glob to a single tool (which concatenates all files into one input), `map`
+    processes each file separately and in parallel — one tool call instead of N, with a clean
+    per-file result. Per-file failures appear as 'Error: ...' values and never sink the batch.
+
+    Returns:
+        str: a JSON object mapping each file path to its result (or an 'Error: ...' string).
+    """
+    try:
+        files = _glob_files(path)
+    except ValueError as e:
+        return f"Error: {e}"
+    if op == "classify" and not labels:
+        return "Error: op='classify' requires labels."
+    if op == "extract" and not instructions:
+        return "Error: op='extract' requires instructions."
+    if op == "translate" and not target:
+        return "Error: op='translate' requires target."
+
+    sem = asyncio.Semaphore(max(1, MAP_CONCURRENCY))
+
+    async def run_one(fp: str) -> str:
+        async with sem:
+            if op == "summarize":
+                return await summarize(path=fp, max_words=max_words, style=style, provider=provider, model=model)
+            if op == "classify":
+                return await classify(labels=labels, path=fp, provider=provider, model=model)
+            if op == "extract":
+                return await extract(instructions=instructions, path=fp, provider=provider, model=model)
+            if op == "translate":
+                return await translate(target=target, path=fp, style=style, provider=provider, model=model)
+            return await rewrite(path=fp, tone=tone, provider=provider, model=model)
+
+    results = await asyncio.gather(*(run_one(fp) for fp in files))
+    return json.dumps(dict(zip(files, results)), indent=2)
 
 
 @mcp.tool(
