@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Lint (ruff)
+        run: uvx ruff check .
+
+      - name: Import smoke test
+        run: >
+          uv run --with mcp --with httpx python -c
+          "import importlib.util as u;
+          s = u.spec_from_file_location('m', 'llm_offload_mcp.py');
+          m = u.module_from_spec(s);
+          s.loader.exec_module(m);
+          print('import ok:', m.mcp.name)"
