@@ -27,6 +27,7 @@ Frontier models are great, but a lot of day-to-day agent work is *light*: summar
 - 🏠 **Local-first** — defaults to a local LM Studio; no API key required for local backends.
 - 🎯 **Purpose-built tools** — `ask`, `summarize`, `classify`, `extract`, `health` — each shaped for a light task, not just a raw chat passthrough.
 - 🧭 **Per-call routing** — every tool takes optional `provider` and `model` args, so the cheap stuff goes local and the *slightly* harder stuff can go to Grok/OpenRouter without reconfiguring.
+- 📂 **File input** — `summarize`/`classify`/`extract` take a `path` (file or glob) and the server reads it locally, so the orchestrator sends only the path — this is what makes offloading *large* inputs actually save tokens.
 - 🩺 **Actionable errors** — connection, timeout, auth, 404-model, and rate-limit failures come back as plain, fix-this-next strings instead of stack traces.
 - 📦 **Single file, zero install** — [PEP 723](https://peps.python.org/pep-0723/) inline deps mean `uv run llm_offload_mcp.py` just works.
 - 🤖 **Claude Code subagent included** — an optional `llm-offloader` agent that auto-routes light work for you.
@@ -153,13 +154,21 @@ In Claude Code, run the `health` tool (or ask Claude to). You should see the res
 
 | Tool | Signature | Purpose |
 |------|-----------|---------|
-| `ask` | `ask(prompt, system?, provider?, model?, temperature?, max_tokens?)` | Free-form light generation (Q&A, rephrase, draft). |
-| `summarize` | `summarize(text, max_words?, style?, provider?, model?)` | Faithful summary, length- and style-bounded. |
-| `classify` | `classify(text, labels[], provider?, model?)` | Single-label classification; returns one of `labels`. |
-| `extract` | `extract(text, instructions, provider?, model?)` | Structured extraction → clean JSON string. |
+| `ask` | `ask(prompt, system?, path?, provider?, model?, temperature?, max_tokens?)` | Free-form light generation; `path` folds in a file as context. |
+| `summarize` | `summarize(text?, max_words?, style?, path?, provider?, model?)` | Faithful summary of `text` or a file/glob (`path`). |
+| `classify` | `classify(labels[], text?, path?, provider?, model?)` | Single-label classification of `text` or a file; returns one of `labels`. |
+| `extract` | `extract(instructions, text?, path?, provider?, model?)` | Structured extraction from `text` or a file → clean JSON. |
 | `health` | `health(provider?)` | Reachability check + lists the backend's models. |
 
 Every generation tool accepts `provider` and `model` to override the configured default for that single call.
+
+### File input (where offloading actually saves tokens)
+
+`summarize`, `classify`, and `extract` accept a `path` — a file path or glob (e.g. `logs/run.txt`, `src/**/*.py`) — instead of inline `text`; `ask` accepts `path` as extra context. The server reads the file(s) itself, so the calling model sends only the path. For large inputs that avoids paying the orchestrator's output tokens to forward the payload — which is the whole point.
+
+- Multiple glob matches are concatenated, each under a filename header.
+- Caps: `OFFLOAD_MAX_FILES` (default 50) and `OFFLOAD_MAX_CHARS` (default 100000) — over the limit returns a clear error.
+- Reads use the server process's own file permissions. If you point the server at a **cloud** provider, file contents are sent to that provider — keep sensitive files on a local backend.
 
 ## Configuration
 
@@ -170,6 +179,8 @@ All configuration is via environment variables — none are required if the defa
 | `LLM_PROVIDER` | Default provider name (see table). | `lmstudio` |
 | `LLM_MODEL` | Default model id (as the provider names it). | *(unset)* |
 | `LLM_TIMEOUT` | Request timeout, seconds. | `300` |
+| `OFFLOAD_MAX_FILES` | Max files a `path` glob may match. | `50` |
+| `OFFLOAD_MAX_CHARS` | Max total chars read from a `path`. | `100000` |
 | `<PROVIDER>_BASE_URL` | Override a provider's endpoint, e.g. `LMSTUDIO_BASE_URL`. | preset |
 | `<PROVIDER>_API_KEY` | A provider's API key, e.g. `OPENROUTER_API_KEY`. | conventional env / `LLM_API_KEY` |
 | `<PROVIDER>_MODEL` | Default model for a specific provider. | `LLM_MODEL` |

@@ -20,6 +20,9 @@ Operating rules:
   (rephrase, draft, simple Q&A) → call `ask`.
 - Pass the user's text through faithfully. Do not pre-summarize or re-reason it yourself
   first; that defeats the purpose of offloading.
+- For large inputs (a file, log, diff, or many files), pass `path` (a file path or glob)
+  instead of pasting the text. The server reads it locally, so only the path is sent —
+  this is where offloading actually saves tokens.
 - If a tool returns a string starting with `Error:`, report it verbatim and stop. Do not
   silently redo the task on the main model unless explicitly told to.
 - Return the offload model's output directly, with at most one line of framing.

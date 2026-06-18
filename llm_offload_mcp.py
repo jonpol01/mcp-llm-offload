@@ -15,10 +15,17 @@ and friends all speak the same /v1/chat/completions API, one small server talks 
 all of them. Pick a default with env vars, or override per call with the `provider`
 and `model` tool arguments.
 
+File input (the token-saving bit): summarize/classify/extract accept a `path` (file
+or glob) and `ask` accepts a `path` for context. The server reads the file(s) itself,
+so the calling model only sends the path — not the payload. For large inputs that is
+far cheaper than pasting the text through the orchestrator's output.
+
 Configuration (all optional; sensible defaults target a local LM Studio):
     LLM_PROVIDER   default provider name (default: lmstudio)
     LLM_MODEL      default model id, as the provider names it
     LLM_TIMEOUT    request timeout in seconds (default: 300)
+    OFFLOAD_MAX_FILES  max files a glob may match (default: 50)
+    OFFLOAD_MAX_CHARS  max total chars read from a path/glob (default: 100000)
 
   Per-provider overrides (only set what you use):
     <PROVIDER>_BASE_URL   override the endpoint, e.g. LMSTUDIO_BASE_URL=http://192.168.1.50:1234/v1
@@ -38,8 +45,10 @@ Run:
 
 from __future__ import annotations
 
+import glob
 import json
 import os
+from pathlib import Path
 from typing import Annotated, List, Optional
 
 import httpx
@@ -69,6 +78,8 @@ PROVIDERS: dict[str, dict] = {
 DEFAULT_PROVIDER: str = os.environ.get("LLM_PROVIDER", "lmstudio").lower()
 DEFAULT_MODEL: Optional[str] = os.environ.get("LLM_MODEL")
 TIMEOUT: float = float(os.environ.get("LLM_TIMEOUT", "300"))
+MAX_PATH_FILES: int = int(os.environ.get("OFFLOAD_MAX_FILES", "50"))
+MAX_PATH_CHARS: int = int(os.environ.get("OFFLOAD_MAX_CHARS", "100000"))
 
 mcp = FastMCP("llm_offload_mcp")
 
@@ -134,6 +145,52 @@ def _build_messages(prompt: str, system: Optional[str]) -> List[dict]:
     else:
         content = prompt
     return [{"role": "user", "content": content}]
+
+
+def _read_path(pattern: str) -> str:
+    """Read a file path or glob locally and return its text.
+
+    This is what makes offloading large inputs cheap: the calling model sends only
+    the path, and the server reads the bytes. Multiple matches are concatenated with
+    a filename header each. Reads use the server process's own permissions.
+
+    Raises:
+        ValueError: no match, too many files, unreadable file, or over the size cap.
+    """
+    matches = sorted(p for p in glob.glob(pattern, recursive=True) if os.path.isfile(p))
+    if not matches:
+        raise ValueError(f"no file matches path '{pattern}'. Pass an existing file path or glob.")
+    if len(matches) > MAX_PATH_FILES:
+        raise ValueError(
+            f"path '{pattern}' matched {len(matches)} files (limit {MAX_PATH_FILES}). "
+            "Narrow the glob or raise OFFLOAD_MAX_FILES."
+        )
+    parts: List[str] = []
+    total = 0
+    for fp in matches:
+        try:
+            content = Path(fp).read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            raise ValueError(f"could not read '{fp}': {e}") from e
+        total += len(content)
+        if total > MAX_PATH_CHARS:
+            raise ValueError(
+                f"input from '{pattern}' exceeds {MAX_PATH_CHARS} chars. "
+                "Narrow the selection or raise OFFLOAD_MAX_CHARS."
+            )
+        parts.append(f"===== {fp} =====\n{content}" if len(matches) > 1 else content)
+    return "\n\n".join(parts)
+
+
+def _resolve_text(text: Optional[str], path: Optional[str]) -> str:
+    """Return the effective input text from exactly one of `text` or `path`."""
+    if path:
+        if text:
+            raise ValueError("provide either text or path, not both.")
+        return _read_path(path)
+    if text:
+        return text
+    raise ValueError("provide either text or path.")
 
 
 def _extra_headers() -> dict:
@@ -267,6 +324,11 @@ _PROVIDER_HELP = (
     "mistral) or any name you configured via <NAME>_BASE_URL. Defaults to LLM_PROVIDER."
 )
 _MODEL_HELP = "Optional model id override for this call. Defaults to the provider's configured model."
+_PATH_HELP = (
+    "Optional path or glob (e.g. 'logs/run.txt' or 'src/**/*.py') whose contents become the "
+    "input. The server reads it locally, so only the path is sent — much cheaper than pasting "
+    "large text. Provide this OR the inline text argument, not both."
+)
 
 
 @mcp.tool(
@@ -282,6 +344,7 @@ _MODEL_HELP = "Optional model id override for this call. Defaults to the provide
 async def ask(
     prompt: Annotated[str, Field(description="The prompt / question for the model.", min_length=1)],
     system: Annotated[Optional[str], Field(description="Optional steering instruction (persona, format, constraints).")] = None,
+    path: Annotated[Optional[str], Field(description="Optional file path or glob to fold in as context (read locally by the server).")] = None,
     provider: Annotated[Optional[str], Field(description=_PROVIDER_HELP)] = None,
     model: Annotated[Optional[str], Field(description=_MODEL_HELP)] = None,
     temperature: Annotated[float, Field(description="Sampling temperature; lower is more deterministic.", ge=0.0, le=2.0)] = 0.7,
@@ -290,19 +353,26 @@ async def ask(
     """Send a free-form prompt to the offload model and return its reply.
 
     Use this to push light, non-critical generation off frontier-model quota: simple
-    Q&A, rewriting, drafting boilerplate, quick reasoning. For structured tasks prefer
-    summarize, classify, or extract, which constrain the output.
+    Q&A, rewriting, drafting boilerplate, quick reasoning. Pass `path` to give the model
+    a local file as context without pasting it. For structured tasks prefer summarize,
+    classify, or extract, which constrain the output.
 
     Returns:
         str: the model's plain-text completion, or an 'Error: ...' string.
     """
-    return await _complete(_build_messages(prompt, system), provider, model, temperature, max_tokens)
+    user = prompt
+    if path:
+        try:
+            user = f"{prompt}\n\n----- file: {path} -----\n{_read_path(path)}"
+        except ValueError as e:
+            return f"Error: {e}"
+    return await _complete(_build_messages(user, system), provider, model, temperature, max_tokens)
 
 
 @mcp.tool(
     name="summarize",
     annotations={
-        "title": "Summarize text",
+        "title": "Summarize text or a file",
         "readOnlyHint": True,
         "destructiveHint": False,
         "idempotentHint": False,
@@ -310,29 +380,34 @@ async def ask(
     },
 )
 async def summarize(
-    text: Annotated[str, Field(description="The text to summarize.", min_length=1)],
+    text: Annotated[Optional[str], Field(description="The text to summarize. Provide this or `path`.")] = None,
     max_words: Annotated[int, Field(description="Approximate upper bound on summary length, in words.", ge=10, le=1000)] = 120,
     style: Annotated[Optional[str], Field(description="Optional style, e.g. 'bullet points', 'one sentence', 'plain language'.")] = None,
+    path: Annotated[Optional[str], Field(description=_PATH_HELP)] = None,
     provider: Annotated[Optional[str], Field(description=_PROVIDER_HELP)] = None,
     model: Annotated[Optional[str], Field(description=_MODEL_HELP)] = None,
 ) -> str:
-    """Summarize text using the offload model.
+    """Summarize text (or the contents of a file/glob via `path`) using the offload model.
 
     Returns:
         str: the summary, or an 'Error: ...' string.
     """
+    try:
+        src = _resolve_text(text, path)
+    except ValueError as e:
+        return f"Error: {e}"
     style_hint = f" Format the summary as {style}." if style else ""
     system = (
         f"You are a precise summarizer. Produce a faithful summary in about {max_words} "
         f"words or fewer.{style_hint} Do not invent information that is not present in the input."
     )
-    return await _complete(_build_messages(text, system), provider, model, 0.3, max(64, max_words * 3))
+    return await _complete(_build_messages(src, system), provider, model, 0.3, max(64, max_words * 3))
 
 
 @mcp.tool(
     name="classify",
     annotations={
-        "title": "Classify text into one label",
+        "title": "Classify text or a file into one label",
         "readOnlyHint": True,
         "destructiveHint": False,
         "idempotentHint": True,
@@ -340,23 +415,28 @@ async def summarize(
     },
 )
 async def classify(
-    text: Annotated[str, Field(description="The text to classify.", min_length=1)],
     labels: Annotated[List[str], Field(description="Allowed category labels to choose from.", min_length=2, max_length=50)],
+    text: Annotated[Optional[str], Field(description="The text to classify. Provide this or `path`.")] = None,
+    path: Annotated[Optional[str], Field(description=_PATH_HELP)] = None,
     provider: Annotated[Optional[str], Field(description=_PROVIDER_HELP)] = None,
     model: Annotated[Optional[str], Field(description=_MODEL_HELP)] = None,
 ) -> str:
-    """Classify text into exactly one of the provided labels using the offload model.
+    """Classify text (or the contents of a file via `path`) into exactly one of `labels`.
 
     Returns:
         str: the chosen label (verbatim from `labels` when the model's answer matches),
         otherwise the model's raw answer, or an 'Error: ...' string.
     """
+    try:
+        src = _resolve_text(text, path)
+    except ValueError as e:
+        return f"Error: {e}"
     label_list = ", ".join(labels)
     system = (
         "You are a single-label text classifier. Read the input and respond with EXACTLY "
         f"ONE of these labels and nothing else: {label_list}."
     )
-    raw = await _complete(_build_messages(text, system), provider, model, 0.0, 32)
+    raw = await _complete(_build_messages(src, system), provider, model, 0.0, 32)
     if raw.startswith("Error:"):
         return raw
 
@@ -374,7 +454,7 @@ async def classify(
 @mcp.tool(
     name="extract",
     annotations={
-        "title": "Extract structured JSON",
+        "title": "Extract structured JSON from text or a file",
         "readOnlyHint": True,
         "destructiveHint": False,
         "idempotentHint": True,
@@ -382,23 +462,28 @@ async def classify(
     },
 )
 async def extract(
-    text: Annotated[str, Field(description="Source text to extract from.", min_length=1)],
     instructions: Annotated[str, Field(description="What to extract: plain language or a field list, e.g. 'name, date, total amount'.", min_length=1)],
+    text: Annotated[Optional[str], Field(description="Source text to extract from. Provide this or `path`.")] = None,
+    path: Annotated[Optional[str], Field(description=_PATH_HELP)] = None,
     provider: Annotated[Optional[str], Field(description=_PROVIDER_HELP)] = None,
     model: Annotated[Optional[str], Field(description=_MODEL_HELP)] = None,
 ) -> str:
-    """Extract structured data from text as JSON using the offload model.
+    """Extract structured data as JSON from text (or a file via `path`) using the offload model.
 
     Returns:
         str: a JSON string (best-effort; fences and stray prose are stripped), or an
         'Error: ...' string.
     """
+    try:
+        src = _resolve_text(text, path)
+    except ValueError as e:
+        return f"Error: {e}"
     system = (
         "You are a data extraction engine. Extract the requested fields from the input and "
         "respond with a single valid JSON value only — no markdown, no commentary. "
         f"Fields/instructions: {instructions}"
     )
-    raw = await _complete(_build_messages(text, system), provider, model, 0.0, 1024)
+    raw = await _complete(_build_messages(src, system), provider, model, 0.0, 1024)
     if raw.startswith("Error:"):
         return raw
     return _isolate_json(raw)
