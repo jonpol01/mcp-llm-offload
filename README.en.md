@@ -230,6 +230,22 @@ mkdir -p .claude/agents && cp agents/llm-offloader.md .claude/agents/
 
 > Its `tools:` list references `mcp__offload__*`, so it requires the server to be registered under the name **`offload`**.
 
+## Tiering: local → Sonnet → frontier
+
+The offloader is the **local tier** of a simple cost cascade. Pair it with the bundled `mid-tier` subagent and your frontier model gets clean three-tier routing:
+
+| Tier | Runs on | Use for |
+|------|---------|---------|
+| **Local** | your offload backend (a 0.6–4B local model, or any provider) | light, non-critical work — summarize / classify / translate / extract, commit messages, mock data, `map` over files |
+| **Mid** | **Sonnet**, via [`agents/mid-tier.md`](agents/mid-tier.md) | work above the local model's ability but below the frontier model — reading a whole doc and extracting, light analysis, low-risk / boilerplate code, mechanical refactors |
+| **Frontier** | your main model (e.g. Opus) | correctness-critical or hard — real logic, architecture, security, multi-step reasoning |
+
+The `mid-tier` tier needs **no backend** — it runs on Claude (Sonnet) directly, so it works even when no local or OpenAI-compatible offload provider is configured. A good pattern: the frontier model delegates a big mechanical read (e.g. extract the spec from a multi-file API doc set) to `mid-tier`, then **spot-checks only the parts it will build against** — bulk work goes cheap, the load-bearing details stay verified.
+
+```bash
+cp agents/mid-tier.md ~/.claude/agents/
+```
+
 ## Troubleshooting
 
 | Symptom | Likely fix |
