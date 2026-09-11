@@ -149,6 +149,10 @@ async def _served() -> Optional[List[str]]:
     Worth the extra round-trip before every delegation: Hermes does not reject an
     unknown model name — it answers it on its own profile — so a typo would hand the
     task to a different agent, holding different credentials, and look like success.
+
+    None means "could not check", which `delegate` treats as a refusal rather than as
+    permission: an endpoint that serves chat but not /models would otherwise skip the
+    check silently, which is the failure this guard exists to prevent.
     """
     try:
         return await _get_models()
@@ -207,7 +211,8 @@ async def delegate(
     Hermes `approvals.deny` rules as the safety floor.
 
     The bot name is checked against the endpoint first, because Hermes answers an
-    unknown name on its own profile rather than refusing it.
+    unknown name on its own profile rather than refusing it. If that check cannot be
+    made, the delegation is refused rather than sent unchecked.
 
     For plain text work with no side effects — summarise, classify, extract — prefer
     `llm_offload_mcp`, pointing it at a cheap model rather than at an agent.
@@ -221,12 +226,19 @@ async def delegate(
         return f"Error: {e}"
 
     served = await _served()
-    if served and chosen not in served:
+    if served is None:
+        return (
+            f"Error: could not read {BASE_URL}/models to check the bot name, so nothing "
+            "was delegated. Hermes answers an unknown name on its own profile, so sending "
+            "an unchecked name risks running the task on a different agent. Check the "
+            "endpoint with the `health` tool, then retry."
+        )
+    if chosen not in served:
         return (
             f"Error: this endpoint serves no bot named '{chosen}' — it serves: "
-            f"{', '.join(served)}. Hermes would not have refused: it answers an unknown "
-            "name on its own profile, so the task would have run on a different agent "
-            "with different credentials."
+            f"{', '.join(served) or '(nothing)'}. Hermes would not have refused: it "
+            "answers an unknown name on its own profile, so the task would have run on "
+            "a different agent with different credentials."
         )
 
     content = task
