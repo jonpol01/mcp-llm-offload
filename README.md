@@ -92,7 +92,7 @@ cd mcp-llm-offload
 uv run llm_offload_mcp.py
 ```
 
-> `uv` がない場合は `pip install mcp httpx` のあと `python llm_offload_mcp.py`。
+> `uv` がない場合は `pip install 'mcp<2' httpx` のあと `python llm_offload_mcp.py`。
 
 ### 3. Claude Code への登録
 
@@ -260,8 +260,8 @@ cp agents/mid-tier.md ~/.claude/agents/
 ## 開発
 
 ```bash
-uvx ruff check .          # lint
-uv run --with mcp --with httpx python -c \
+uvx ruff@0.15.0 check .   # lint
+uv run --with 'mcp<2' --with httpx python -c \
   "import importlib.util as u; s=u.spec_from_file_location('m','llm_offload_mcp.py'); m=u.module_from_spec(s); s.loader.exec_module(m); print('ok', m.mcp.name)"
 ```
 

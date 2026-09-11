@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["mcp>=1.2.0", "httpx>=0.27"]
+# dependencies = ["mcp>=1.2,<2", "httpx>=0.27"]
 # ///
 """llm_offload_mcp — offload light LLM work to a local model or any OpenAI-compatible provider.
 
@@ -40,7 +40,7 @@ Configuration (all optional; sensible defaults target a local LM Studio):
 
 Run:
     uv run llm_offload_mcp.py          # self-installs deps via the inline metadata above
-    # or: pip install mcp httpx && python llm_offload_mcp.py
+    # or: pip install 'mcp<2' httpx && python llm_offload_mcp.py
 """
 
 from __future__ import annotations
