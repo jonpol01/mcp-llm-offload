@@ -246,6 +246,51 @@ The `mid-tier` tier needs **no backend** — it runs on Claude (Sonnet) directly
 cp agents/en/mid-tier.md ~/.claude/agents/
 ```
 
+## Delegating a task to a Hermes bot (agent_mcp.py)
+
+The tools above offload *generation* — text in, text out. `agent_mcp.py` is a separate,
+optional server that offloads *work*: it hands a whole task to a
+[Hermes](https://github.com/NousResearch/hermes-agent) bot, which has its own shell,
+filesystem and `gh` CLI, and returns what the bot reports back.
+
+It is the same idea taken one step further. `summarize(path=...)` keeps a file out of your
+context; `delegate` keeps an entire task out of it — the bot reads the diff, the CI log and
+the issue thread, and you receive only its conclusion.
+
+**This server is not read-only.** A Hermes bot acts with its own credentials: it can commit,
+push and comment. The tools are annotated accordingly, and this server deliberately adds no
+safety of its own — the bot's own Hermes `approvals.deny` rules are the floor. Scope every
+task to named repositories and paths.
+
+```bash
+export HERMES_BASE_URL=http://192.168.1.50:8649/v1   # the bot's gateway, ending in /v1
+export HERMES_API_KEY=...                            # that profile's API_SERVER_KEY
+export HERMES_BOT=github                             # a Hermes profile name
+uv run agent_mcp.py
+```
+
+Register it under the MCP server name `agent`:
+
+```bash
+claude mcp add agent -s user -- uv run /absolute/path/to/agent_mcp.py
+```
+
+| Tool | |
+|---|---|
+| `delegate` | Hand a task to a bot and return its report. Optional `bot`, `path`, `system`. |
+| `bots` | List the bot names this endpoint serves. |
+| `health` | Check the endpoint and its configuration, without printing the key. |
+
+The endpoint and key are read only from the environment, never from tool arguments, so a
+prompt cannot redirect a delegation somewhere else. The bot name is checked against the
+endpoint before the run: Hermes answers an unknown model name on its own profile rather than
+refusing it, so an unchecked typo would quietly hand the task to a different agent.
+
+A Hermes bot also speaks the OpenAI chat API, so it already works as an ordinary provider for
+the tools above — `ask(provider="hermes")` once `HERMES_BASE_URL` and `HERMES_API_KEY` are
+set. Prefer a cheap model there: those tools are annotated read-only, and an agent backing
+them can act.
+
 ## Troubleshooting
 
 | Symptom | Likely fix |
