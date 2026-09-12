@@ -1,7 +1,7 @@
 {
   "name": "mcp-llm-offload",
   "displayName": "LLM Offload",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Offload light LLM work to a local model or any OpenAI-compatible provider, and delegate whole tasks to a Hermes bot.",
   "homepage": "https://github.com/seaosinc/mcp-llm-offload",
   "license": "MIT",
