@@ -1,7 +1,7 @@
 {
   "name": "mcp-llm-offload",
   "displayName": "LLM Offload",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Offload light LLM work to a local model or any OpenAI-compatible provider, and delegate whole tasks to a Hermes bot.",
   "homepage": "https://github.com/seaosinc/mcp-llm-offload",
   "license": "MIT",
@@ -66,6 +66,12 @@
       "type": "string",
       "title": "Base URL",
       "description": "OpenAI-compatible endpoint ending in /v1. Only needed to override the provider's default, e.g. LM Studio on another machine.",
+      "default": ""
+    },
+    "lmstudio_base_url": {
+      "type": "string",
+      "title": "LM Studio URL",
+      "description": "Where LM Studio actually is, if not on this machine, e.g. http://192.168.1.50:1234/v1. Needed for provider=\"lmstudio\" to reach it on a per-call basis \u2014 the generic Base URL above only applies to the provider you made the default.",
       "default": ""
     },
     "llm_api_key": {
