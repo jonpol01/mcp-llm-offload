@@ -4,7 +4,7 @@
 
 > An MCP server that offloads **light LLM work** from Claude (or any MCP client) to a model you control — a **local** LLM (LM Studio, Ollama, llama.cpp) or **any OpenAI-compatible provider** (OpenRouter, xAI Grok, OpenAI, Groq, Together…). Save frontier-model quota on the cheap, non-critical stuff.
 
-[![CI](https://github.com/jonpol01/mcp-llm-offload/actions/workflows/ci.yml/badge.svg)](https://github.com/jonpol01/mcp-llm-offload/actions/workflows/ci.yml)
+[![CI](https://github.com/seaosinc/mcp-llm-offload/actions/workflows/ci.yml/badge.svg)](https://github.com/seaosinc/mcp-llm-offload/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![MCP](https://img.shields.io/badge/MCP-compatible-8A2BE2.svg)](https://modelcontextprotocol.io)
@@ -25,11 +25,14 @@ Frontier models are great, but a lot of day-to-day agent work is *light*: summar
 
 - 🔀 **Provider-agnostic** — one server, any OpenAI-compatible endpoint. Presets for the common ones; bring-your-own for the rest.
 - 🏠 **Local-first** — defaults to a local LM Studio; no API key required for local backends.
-- 🎯 **Purpose-built tools** — `ask`, `summarize`, `classify`, `extract`, `health` — each shaped for a light task, not just a raw chat passthrough.
+- 🎯 **Purpose-built tools** — `ask`, `summarize`, `classify`, `extract`, `translate`, `rewrite`, `commit_message`, `pr_description`, `changelog`, `mock_data`, `map`, `health` — each shaped for a light task, not just a raw chat passthrough.
 - 🧭 **Per-call routing** — every tool takes optional `provider` and `model` args, so the cheap stuff goes local and the *slightly* harder stuff can go to Grok/OpenRouter without reconfiguring.
 - 📂 **File input** — `summarize`/`classify`/`extract` take a `path` (file or glob) and the server reads it locally, so the orchestrator sends only the path — this is what makes offloading *large* inputs actually save tokens.
 - 🩺 **Actionable errors** — connection, timeout, auth, 404-model, and rate-limit failures come back as plain, fix-this-next strings instead of stack traces.
 - 📦 **Single file, zero install** — [PEP 723](https://peps.python.org/pep-0723/) inline deps mean `uv run llm_offload_mcp.py` just works.
+- 🧑‍🚀 **Delegate whole tasks** — the companion `agent_mcp.py` hands a job to a [Hermes](https://github.com/NousResearch/hermes-agent) bot that owns a shell, a filesystem and the `gh` CLI, so the diff and the log it worked from never enter your context.
+- ⚖️ **Spread routing** — `single` puts everything on one backend; `spread` sends cheap structured ops to a small local model and keeps generation on the stronger one. The same summarize measured 0.6s against 6.6s across the two.
+- 🔌 **Installable as a Claude Code plugin** — both servers, with their settings prompted at enable time and keys kept in the keychain.
 - 🤖 **Claude Code subagent included** — an optional `llm-offloader` agent that auto-routes light work for you.
 
 ## Recommended local models
@@ -72,6 +75,32 @@ The server is a thin, well-behaved MCP front-end. It resolves *which* backend an
 
 The diagram above shows the bigger picture this enables: small local models acting as autonomous "ninjas" that handle routine chores end-to-end, so Claude is never invoked for them.
 
+## Install as a Claude Code plugin
+
+The plugin bundles both servers and prompts for what they need, so there is nothing to
+register by hand:
+
+```bash
+/plugin marketplace add seaosinc/mcp-llm-offload
+/plugin install mcp-llm-offload@mcp-llm-offload
+```
+
+Claude Code then asks for the configuration — provider, model, and, if you run one, the
+Hermes bot's URL, key and name. Values marked sensitive go to your keychain rather than
+`settings.json`. Change them later with:
+
+```bash
+/plugin configure mcp-llm-offload@mcp-llm-offload
+```
+
+Two things to know before choosing this path:
+
+- **The plugin ships no subagent.** Claude Code namespaces a plugin's MCP servers, so the
+  bundled `llm-offloader` agent — whose frontmatter pins the unnamespaced
+  `mcp__offload__*` tool names — would load with no usable tools. Rather than ship that,
+  the plugin omits it; install the agent by hand (see below) if you want it.
+- `uv` still has to be on `PATH`, and you still need a backend to talk to.
+
 ## Quick start
 
 ### 1. Prerequisites
@@ -82,7 +111,7 @@ The diagram above shows the bigger picture this enables: small local models acti
 ### 2. Get it
 
 ```bash
-git clone https://github.com/jonpol01/mcp-llm-offload.git
+git clone https://github.com/seaosinc/mcp-llm-offload.git
 cd mcp-llm-offload
 ```
 
@@ -92,7 +121,7 @@ Run it standalone to confirm it starts (it serves MCP over stdio, so it will wai
 uv run llm_offload_mcp.py
 ```
 
-> No `uv`? `pip install mcp httpx` then `python llm_offload_mcp.py`.
+> No `uv`? `pip install 'mcp<2' httpx` then `python llm_offload_mcp.py`.
 
 ### 3. Register with Claude Code
 
@@ -204,7 +233,7 @@ All configuration is via environment variables — none are required if the defa
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LLM_PROVIDER` | Default provider name (see table). | `lmstudio` |
+| `LLM_PROVIDER` | Default provider name (see table). | *(see precedence below)* |
 | `LLM_MODEL` | Default model id (as the provider names it). | *(unset)* |
 | `LLM_TIMEOUT` | Request timeout, seconds. | `300` |
 | `OFFLOAD_MAX_FILES` | Max files a `path` glob may match. | `50` |
@@ -214,6 +243,53 @@ All configuration is via environment variables — none are required if the defa
 | `<PROVIDER>_MODEL` | Default model for a specific provider. | `LLM_MODEL` |
 | `LLM_BASE_URL` / `LLM_API_KEY` | Generic fallbacks for the default provider. | — |
 | `OPENROUTER_REFERER` / `OPENROUTER_TITLE` | Optional OpenRouter ranking headers. | — |
+| `OFFLOAD_ROUTING` | `single` (default) or `spread` — see below. | `single` |
+| `OFFLOAD_LIGHT_PROVIDER` / `OFFLOAD_HEAVY_PROVIDER` | Where each half of a `spread` goes. | default provider |
+| `OFFLOAD_LIGHT_BASE_URL` / `OFFLOAD_HEAVY_BASE_URL` | Only when a routed backend is not on its default host. | preset |
+| `HERMES_BASE_URL` | A Hermes bot gateway, ending in `/v1`. Setting it makes `hermes` the default provider. | *(unset)* |
+| `HERMES_API_KEY` | That Hermes profile's `API_SERVER_KEY`. | *(unset)* |
+| `HERMES_BOT` | Bot (profile) name — used as the model for `hermes`, so you do not set it twice. | `HERMES_MODEL` |
+
+### Which provider a call uses
+
+A call that does not name a `provider` resolves in this order:
+
+1. **`LLM_PROVIDER`**, if set — an explicit choice always wins.
+2. **`hermes`**, if `HERMES_BASE_URL` is set. Configuring a bot is a deliberate act, so it
+   outranks the local fallback: if you run LM Studio *and* a bot, the bot gets the work
+   unless you say otherwise.
+3. **`lmstudio`** otherwise — only ever a fallback guess.
+
+Empty strings count as unset, so a config that passes an unset value straight through (as
+the plugin does) behaves exactly like not setting it.
+
+`health` reports which provider it resolved and why, so you never have to guess.
+
+### Spreading work across backends
+
+`single`, the default, sends every op to the provider resolved above. Set
+`OFFLOAD_ROUTING=spread` to split the work by what it costs instead:
+
+| ops | go to |
+|---|---|
+| `summarize` `classify` `extract` `translate` `rewrite` — and `map`, which runs them | `OFFLOAD_LIGHT_PROVIDER` |
+| `ask` `commit_message` `pr_description` `changelog` `mock_data` | `OFFLOAD_HEAVY_PROVIDER` |
+
+A summarize should not cost what an agent costs. Pointing the light half at a small
+local model and the heavy half at a Hermes bot measured 0.6s against 6.6s per call —
+the same work, an order of magnitude apart.
+
+Either variable may be left unset, in which case that half falls back to the default
+provider rather than guessing at a backend you never named. A per-call `provider=`
+argument still wins over routing, so you can always place one job by hand.
+
+If a routed backend is not on its default host — LM Studio on another machine, say —
+set `OFFLOAD_LIGHT_BASE_URL` or `OFFLOAD_HEAVY_BASE_URL`. `LLM_BASE_URL` cannot cover
+this: it applies only to the default provider, and a plugin cannot name
+`<PROVIDER>_BASE_URL` in advance because that variable depends on which provider you
+pick. An explicit `<PROVIDER>_BASE_URL` still outranks both.
+
+`health` reports the mode and where each half is going.
 
 See [`.env.example`](.env.example) for a copy-paste starting point.
 
@@ -246,6 +322,89 @@ The `mid-tier` tier needs **no backend** — it runs on Claude (Sonnet) directly
 cp agents/en/mid-tier.md ~/.claude/agents/
 ```
 
+## Delegating a task to a Hermes bot (agent_mcp.py)
+
+The tools above offload *generation* — text in, text out. `agent_mcp.py` is a separate,
+optional server that offloads *work*: it hands a whole task to a
+[Hermes](https://github.com/NousResearch/hermes-agent) bot, which has its own shell,
+filesystem and `gh` CLI, and returns what the bot reports back.
+
+It is the same idea taken one step further. `summarize(path=...)` keeps a file out of your
+context; `delegate` keeps an entire task out of it — the bot reads the diff, the CI log and
+the issue thread, and you receive only its conclusion.
+
+**This server is not read-only.** A Hermes bot acts with its own credentials: it can commit,
+push and comment. The tools are annotated accordingly, and this server deliberately adds no
+safety of its own — the bot's own Hermes `approvals.deny` rules are the floor. Scope every
+task to named repositories and paths.
+
+```bash
+export HERMES_BASE_URL=http://192.168.1.50:8649/v1   # the bot's gateway, ending in /v1
+export HERMES_API_KEY=...                            # that profile's API_SERVER_KEY
+export HERMES_BOT=github                             # a Hermes profile name
+uv run agent_mcp.py
+```
+
+Register it under the MCP server name `agent`, passing the settings as env:
+
+```bash
+claude mcp add agent \
+  -e HERMES_BASE_URL=http://192.168.1.50:8649/v1 \
+  -e HERMES_API_KEY=...  \
+  -e HERMES_BOT=github \
+  -- uv run /absolute/path/to/agent_mcp.py
+```
+
+`HERMES_API_KEY` is the `API_SERVER_KEY` of the Hermes profile you are addressing — the
+one in that profile's `.env`. `HERMES_BOT` is the profile name; `bots` will list them.
+
+| Tool | |
+|---|---|
+| `delegate` | Hand a task to a bot and return its report. Optional `bot`, `path`, `system`. |
+| `bots` | List the bot names this endpoint serves. |
+| `health` | Check the endpoint and its configuration, without printing the key. |
+
+The endpoint and key are read only from the environment, never from tool arguments, so a
+prompt cannot redirect a delegation somewhere else. The bot name is checked against the
+endpoint before the run: Hermes answers an unknown model name on its own profile rather than
+refusing it, so an unchecked typo would quietly hand the task to a different agent.
+
+A Hermes bot also speaks the OpenAI chat API, so it already works as an ordinary provider for
+the tools above — `ask(provider="hermes")` once `HERMES_BASE_URL` and `HERMES_API_KEY` are
+set. Prefer a cheap model there: those tools are annotated read-only, and an agent backing
+them can act.
+
+## Delivering drafted text (post_mcp.py)
+
+`llm_offload_mcp` drafts text and hands it back. It has no way to put that text anywhere, so
+anything you wanted delivered had to travel back through the calling model first — the cost this
+project exists to avoid. `post_mcp.py` is the optional companion that delivers it: Discord, Slack,
+Telegram, a Linear issue comment, a GitHub issue or PR comment, or a generic webhook (n8n and
+friends via `<NAME>_KIND`).
+
+**Not read-only.** It sends things to people, so it lives in its own opt-in server rather than
+being folded into the read-only tools — the same split `agent_mcp.py` follows.
+
+```bash
+claude mcp add post \
+  -e DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/... \
+  -- uv run /absolute/path/to/post_mcp.py
+```
+
+| Tool | |
+|---|---|
+| `post` | deliver one message to a configured target; `to` addresses the issue or PR where a target needs one |
+| `post_many` | the same message to several targets at once |
+| `targets` | list what is configured, and what each one still needs |
+
+Destinations and secrets are read only from the environment, never from tool arguments, so a prompt
+cannot redirect a message somewhere else. `dry_run` previews the exact request without sending it,
+and secrets are redacted from both previews and the `targets` listing.
+
+`examples/ninja.py` runs the whole loop with no Claude in it at all: gather input locally, let a
+local model draft it, deliver the result. Point it at cron for a status pipeline that costs zero
+frontier-model tokens.
+
 ## Troubleshooting
 
 | Symptom | Likely fix |
@@ -260,12 +419,14 @@ cp agents/en/mid-tier.md ~/.claude/agents/
 ## Development
 
 ```bash
-uvx ruff check .          # lint
-uv run --with mcp --with httpx python -c \
+uvx ruff@0.15.0 check .   # lint
+uv run --with 'mcp<2' --with httpx python -c \
   "import importlib.util as u; s=u.spec_from_file_location('m','llm_offload_mcp.py'); m=u.module_from_spec(s); s.loader.exec_module(m); print('ok', m.mcp.name)"
 ```
 
 CI (GitHub Actions) runs the same lint + import smoke test on every push and PR.
+Claude Code reads the plugin's own `.mcp.json` as **project** MCP config when you work inside this repo, and will offer to start `offload` and `agent` from it. Decline them. That file is the plugin's declaration, not a project setup: its paths only resolve once Claude Code expands `${CLAUDE_PLUGIN_ROOT}` for an installed plugin. If you have already registered `offload` yourself, approving the project copy would shadow your own registration.
+
 
 ## Contributing
 
@@ -273,4 +434,4 @@ Issues and PRs welcome. Keep the server single-file and provider-neutral; new pr
 
 ## License
 
-[MIT](LICENSE) © John Paul Soliva
+[MIT](LICENSE) © Seaos Inc

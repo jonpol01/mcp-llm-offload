@@ -1,0 +1,14 @@
+{
+  "name": "mcp-llm-offload",
+  "description": "Tools that move light LLM work off frontier-model quota: a local or hosted model for text, a Hermes bot for whole tasks.",
+  "owner": {
+    "name": "seaosinc"
+  },
+  "plugins": [
+    {
+      "name": "mcp-llm-offload",
+      "source": "./",
+      "description": "Offload light LLM work to a local model or any OpenAI-compatible provider, and delegate whole tasks to a Hermes bot."
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "name": "mcp-llm-offload",
+  "displayName": "LLM Offload",
+  "version": "0.3.0",
+  "description": "Offload light LLM work to a local model or any OpenAI-compatible provider, and delegate whole tasks to a Hermes bot.",
+  "homepage": "https://github.com/seaosinc/mcp-llm-offload",
+  "license": "MIT",
+  "author": {
+    "name": "seaosinc"
+  },
+  "keywords": [
+    "llm",
+    "offload",
+    "local-llm",
+    "lmstudio",
+    "ollama",
+    "openrouter",
+    "hermes",
+    "agent"
+  ],
+  "agents": [],
+  "userConfig": {
+    "llm_provider": {
+      "type": "string",
+      "title": "Provider",
+      "description": "lmstudio, ollama, llamacpp, openrouter, grok, openai, groq, together, deepinfra, mistral, hermes. Leave empty to decide automatically: a Hermes bot if you configure one below, otherwise LM Studio.",
+      "default": ""
+    },
+    "routing": {
+      "type": "string",
+      "title": "Routing",
+      "description": "single = send every job to the provider above. spread = split by cost: summarize/classify/extract/translate/rewrite go to the light backend, and ask/commit_message/pr_description/changelog/mock_data go to the heavy one.",
+      "default": "single"
+    },
+    "light_provider": {
+      "type": "string",
+      "title": "Light backend (spread only)",
+      "description": "Provider for cheap structured ops, e.g. lmstudio. Leave empty to use the provider above.",
+      "default": ""
+    },
+    "light_base_url": {
+      "type": "string",
+      "title": "Light backend URL (spread only)",
+      "description": "Only if the light backend is not on its default host, e.g. LM Studio on another machine: http://192.168.1.50:1234/v1",
+      "default": ""
+    },
+    "heavy_provider": {
+      "type": "string",
+      "title": "Heavy backend (spread only)",
+      "description": "Provider for generation and judgement, e.g. hermes. Leave empty to use the provider above.",
+      "default": ""
+    },
+    "heavy_base_url": {
+      "type": "string",
+      "title": "Heavy backend URL (spread only)",
+      "description": "Only if the heavy backend is not on its default host. A Hermes bot is already covered by the Hermes gateway URL below.",
+      "default": ""
+    },
+    "llm_model": {
+      "type": "string",
+      "title": "Model",
+      "description": "Model id the provider serves, e.g. gemma-4-e2b-it. For a Hermes bot, use the bot field below instead.",
+      "default": ""
+    },
+    "llm_base_url": {
+      "type": "string",
+      "title": "Base URL",
+      "description": "OpenAI-compatible endpoint ending in /v1. Only needed to override the provider's default, e.g. LM Studio on another machine.",
+      "default": ""
+    },
+    "llm_api_key": {
+      "type": "string",
+      "title": "API key",
+      "description": "Key for a hosted provider (OpenRouter, xAI, OpenAI, ...). Local backends need none.",
+      "sensitive": true,
+      "default": ""
+    },
+    "hermes_base_url": {
+      "type": "string",
+      "title": "Hermes bot gateway URL",
+      "description": "The bot's OpenAI-compatible URL, ending in /v1, e.g. http://192.168.1.50:8649/v1. Setting this makes the bot the default provider and enables task delegation.",
+      "default": ""
+    },
+    "hermes_api_key": {
+      "type": "string",
+      "title": "Hermes API key",
+      "description": "That Hermes profile's API_SERVER_KEY.",
+      "sensitive": true,
+      "default": ""
+    },
+    "hermes_bot": {
+      "type": "string",
+      "title": "Hermes bot name",
+      "description": "Which bot runs the work \u2014 a Hermes profile name, e.g. github. Ask the agent server's `bots` tool if unsure.",
+      "default": ""
+    }
+  }
+}
