@@ -92,7 +92,7 @@ Claude Code ──stdio──▶ mcp-llm-offload ──HTTP /v1/chat/completions
 /plugin configure mcp-llm-offload@mcp-llm-offload
 ```
 
-この方法を選ぶ前に、次の 2 点を把握してください。
+この方法を選ぶ前に、次の 3 点を把握してください。
 
 - **プラグインにはサブエージェントは同梱されていません。** Claude Code はプラグインの MCP サーバーに名前空間を付けるため、同梱の `llm-offloader` エージェント（フロントマターが名前空間なしの `mcp__offload__*` ツール名を固定しています）は、使えるツールがない状態で読み込まれてしまいます。そのため同梱せず、必要な場合はエージェントを手作業でインストールしてください（後述）。
 - **プラグインとしてインストールするとツール名が変わります。** `mcp__plugin_mcp-llm-offload_offload__*` および `mcp__plugin_mcp-llm-offload_agent__*` になります。ツール名を明示的に書いているもの（サブエージェントの `tools:`、`CLAUDE.md` の振り分け規則、フックなど）はこの名前空間付きの形に直さないと、何も呼ばないまま静かに失敗します。実際の名前は `/mcp` で確認できます。
@@ -405,7 +405,7 @@ Hermes ボットは OpenAI のチャット API も話すため、上記のツー
 | コメントやレビューのスレッドを読む | `delegate` |
 | diff、CI ログ、長いスレッドを要約する | `summarize(path=…)` |
 | PR の説明、コミットメッセージ、変更ログ | `pr_description` / `commit_message` / `changelog` |
-| レビュアーへの返信を下書きする | `delegate` または `ask(path=…)` |
+| レビュアーへの返信を下書きする | `delegate`、または `ask(prompt=…, path=…)` |
 | ドキュメントを翻訳する | `translate` / `delegate` |
 | コメントの投稿、Issue の作成 / ラベル付け / クローズ | `delegate` |
 | PR を開く | `delegate` — タスク文に人間が承認した旨が明記されている場合のみ |

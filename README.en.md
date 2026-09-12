@@ -95,7 +95,7 @@ Hermes bot's URL, key and name. Values marked sensitive go to your keychain rath
 /plugin configure mcp-llm-offload@mcp-llm-offload
 ```
 
-Two things to know before choosing this path:
+Three things to know before choosing this path:
 
 - **The plugin ships no subagent.** Claude Code namespaces a plugin's MCP servers, so the
   bundled `llm-offloader` agent — whose frontmatter pins the unnamespaced
@@ -453,7 +453,7 @@ tokens to save 500 of yours is a win, not a wash.
 | Read comment and review threads | `delegate` |
 | Summarize a diff, a CI log, a long thread | `summarize(path=…)` |
 | PR description, commit message, changelog | `pr_description` / `commit_message` / `changelog` |
-| Draft a reply to a reviewer | `delegate` or `ask(path=…)` |
+| Draft a reply to a reviewer | `delegate`, or `ask(prompt=…, path=…)` |
 | Translate docs | `translate` / `delegate` |
 | Post a comment, create / label / close an issue | `delegate` |
 | Open a PR | `delegate` — only when the task text states a human approved it |
