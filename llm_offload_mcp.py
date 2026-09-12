@@ -75,9 +75,40 @@ PROVIDERS: dict[str, dict] = {
     "together":   {"base_url": "https://api.together.xyz/v1",         "key_env": "TOGETHER_API_KEY"},
     "deepinfra":  {"base_url": "https://api.deepinfra.com/v1/openai", "key_env": "DEEPINFRA_API_KEY"},
     "mistral":    {"base_url": "https://api.mistral.ai/v1",           "key_env": "MISTRAL_API_KEY"},
+    # A Hermes bot gateway. No default URL — it is always site-specific — and its
+    # "model" is a bot (profile) name, so HERMES_BOT works as well as HERMES_MODEL.
+    "hermes":     {"base_url": None, "key_env": "HERMES_API_KEY", "model_env": "HERMES_BOT"},
 }
 
-DEFAULT_PROVIDER: str = os.environ.get("LLM_PROVIDER", "lmstudio").lower()
+def _default_provider() -> str:
+    """The provider a call uses when it does not name one.
+
+    Precedence: LLM_PROVIDER, then a configured Hermes bot, then lmstudio. A bot wins
+    over the local preset because setting HERMES_BASE_URL is a deliberate act, while
+    "lmstudio" is only ever a fallback guess — so someone running both gets the bot
+    without also having to remember LLM_PROVIDER. Set LLM_PROVIDER to override.
+
+    Empty strings count as unset: a config that maps an unset value through (as the
+    Claude Code plugin does) passes "" rather than dropping the variable.
+    """
+    explicit = (os.environ.get("LLM_PROVIDER") or "").strip().lower()
+    if explicit:
+        return explicit
+    if (os.environ.get("HERMES_BASE_URL") or "").strip():
+        return "hermes"
+    return "lmstudio"
+
+
+def _why_default() -> str:
+    """Plain-language reason the default provider is what it is, for `health`."""
+    if (os.environ.get("LLM_PROVIDER") or "").strip():
+        return "LLM_PROVIDER is set"
+    if (os.environ.get("HERMES_BASE_URL") or "").strip():
+        return "HERMES_BASE_URL is set, so the Hermes bot wins over the lmstudio fallback"
+    return "nothing configured a provider, so the lmstudio fallback applies"
+
+
+DEFAULT_PROVIDER: str = _default_provider()
 DEFAULT_MODEL: Optional[str] = os.environ.get("LLM_MODEL")
 TIMEOUT: float = float(os.environ.get("LLM_TIMEOUT", "300"))
 MAX_PATH_FILES: int = int(os.environ.get("OFFLOAD_MAX_FILES", "50"))
@@ -113,9 +144,11 @@ def _resolve(
         or spec.get("base_url")
     )
     if not base_url:
+        known = name in PROVIDERS
         raise ValueError(
-            f"No base URL for provider '{name}'. It is not a known preset; set "
-            f"{env}_BASE_URL to its OpenAI-compatible endpoint (the URL that ends in /v1)."
+            f"No base URL for provider '{name}'. "
+            + ("It is site-specific, so " if known else "It is not a known preset; ")
+            + f"set {env}_BASE_URL to its OpenAI-compatible endpoint (the URL that ends in /v1)."
         )
 
     key_env = spec.get("key_env")
@@ -125,7 +158,13 @@ def _resolve(
         or os.environ.get("LLM_API_KEY")
     )
 
-    chosen_model = model or os.environ.get(f"{env}_MODEL") or DEFAULT_MODEL
+    model_env = spec.get("model_env")
+    chosen_model = (
+        model
+        or os.environ.get(f"{env}_MODEL")
+        or (os.environ.get(model_env) if model_env else None)
+        or DEFAULT_MODEL
+    )
     if require_model and not chosen_model:
         raise ValueError(
             f"No model set for provider '{name}'. Pass model=... or set "
@@ -355,7 +394,8 @@ def _unfence(s: str) -> str:
 _PROVIDER_HELP = (
     "Optional provider override; one of the presets "
     "(lmstudio, ollama, llamacpp, openrouter, grok, openai, groq, together, deepinfra, "
-    "mistral) or any name you configured via <NAME>_BASE_URL. Defaults to LLM_PROVIDER."
+    "mistral, hermes) or any name you configured via <NAME>_BASE_URL. Defaults to "
+    "LLM_PROVIDER, else a Hermes bot when HERMES_BASE_URL is set, else lmstudio."
 )
 _MODEL_HELP = "Optional model id override for this call. Defaults to the provider's configured model."
 _PATH_HELP = (
@@ -871,6 +911,7 @@ async def health(
     return json.dumps(
         {
             "provider": name,
+            "provider_chosen_because": _why_default() if provider is None else "provider argument",
             "base_url": base_url,
             "api_key_present": bool(api_key),
             "configured_model": mdl,

@@ -72,6 +72,26 @@ Claude Code ──stdio──▶ mcp-llm-offload ──HTTP /v1/chat/completions
 
 上の図は、これによって実現できる全体像です。小さなローカルモデルが自律的な「忍者」として日常的な雑務を端から端まで処理し、そのために Claude が一切呼ばれない、という構図です。
 
+## Claude Code プラグインとしてインストールする
+
+プラグインはサーバーと、それらが必要とするプロンプトをまとめて同梱しているため、手作業で登録するものはありません。
+
+```bash
+/plugin marketplace add jonpol01/mcp-llm-offload
+/plugin install mcp-llm-offload@mcp-llm-offload
+```
+
+その後、Claude Code が設定を尋ねます。対象はプロバイダー、モデル、そして（稼働させている場合は）Hermes ボットの URL、キー、名前です。機密としてマークされた値は `settings.json` ではなくキーチェーンに保存されます。後から変更するには、次を実行します。
+
+```bash
+/plugin configure mcp-llm-offload@mcp-llm-offload
+```
+
+この方法を選ぶ前に、次の 2 点を把握してください。
+
+- **プラグインにはサブエージェントは同梱されていません。** Claude Code はプラグインの MCP サーバーに名前空間を付けるため、同梱の `llm-offloader` エージェント（フロントマターが名前空間なしの `mcp__offload__*` ツール名を固定しています）は、使えるツールがない状態で読み込まれてしまいます。そのため同梱せず、必要な場合はエージェントを手作業でインストールしてください（後述）。
+- `uv` は引き続き `PATH` 上に必要であり、通信先のバックエンドも必要です。
+
 ## クイックスタート
 
 ### 1. 前提条件
@@ -204,7 +224,7 @@ Claude Code で `health` ツールを実行（または Claude に頼む）し�
 
 | 変数 | 説明 | 既定値 |
 |------|------|--------|
-| `LLM_PROVIDER` | 既定のプロバイダ名（表を参照）。 | `lmstudio` |
+| `LLM_PROVIDER` | 既定のプロバイダ名（表を参照）。 | *(下の優先順位を参照)* |
 | `LLM_MODEL` | 既定のモデル ID（プロバイダの呼称どおり）。 | *(未設定)* |
 | `LLM_TIMEOUT` | リクエストのタイムアウト（秒）。 | `300` |
 | `OFFLOAD_MAX_FILES` | `path` の glob が一致できる最大ファイル数。 | `50` |
@@ -214,6 +234,21 @@ Claude Code で `health` ツールを実行（または Claude に頼む）し�
 | `<PROVIDER>_MODEL` | 特定プロバイダの既定モデル。 | `LLM_MODEL` |
 | `LLM_BASE_URL` / `LLM_API_KEY` | 既定プロバイダ向けの汎用フォールバック。 | — |
 | `OPENROUTER_REFERER` / `OPENROUTER_TITLE` | OpenRouter のランキング用ヘッダ（任意）。 | — |
+| `HERMES_BASE_URL` | `/v1` で終わる Hermes ボットのゲートウェイです。設定すると、デフォルトのプロバイダーが `hermes` になります。 | *(未設定)* |
+| `HERMES_API_KEY` | その Hermes プロファイルの `API_SERVER_KEY` です。 | *(未設定)* |
+| `HERMES_BOT` | ボット（プロファイル）名です。`hermes` のモデルとして使うため、二重に設定する必要はありません。 | `HERMES_MODEL` |
+
+### 呼び出しが使うプロバイダー
+
+`provider` を指定しない呼び出しは、次の順で解決されます。
+
+1. **`LLM_PROVIDER`** が設定されている場合 — 明示的な選択が常に優先されます。
+2. **`hermes`** — `HERMES_BASE_URL` が設定されている場合。ボットの設定は意図的な行為なので、ローカルのフォールバックより優先されます。LM Studio *と* ボットの両方を動かしている場合、別途指定しない限り作業はボットに渡ります。
+3. **`lmstudio`** — それ以外。あくまでフォールバックの推測です。
+
+空文字列は未設定として扱われるため、未設定の値をそのまま通す設定（プラグインがそうします）は、設定していない場合とまったく同じ動作になります。
+
+`health` は解決したプロバイダーとその理由を報告するので、推測する必要はありません。
 
 コピペ用のひな形は [`.env.example`](.env.example) を参照してください。
 
@@ -261,11 +296,17 @@ export HERMES_BOT=github                             # a Hermes profile name
 uv run agent_mcp.py
 ```
 
-MCP サーバー名 `agent` として登録します:
+MCP サーバー名 `agent` として登録し、設定は環境変数で渡します。
 
 ```bash
-claude mcp add agent -s user -- uv run /absolute/path/to/agent_mcp.py
+claude mcp add agent \
+  -e HERMES_BASE_URL=http://192.168.1.50:8649/v1 \
+  -e HERMES_API_KEY=...  \
+  -e HERMES_BOT=github \
+  -- uv run /absolute/path/to/agent_mcp.py
 ```
+
+`HERMES_API_KEY` は、宛先となる Hermes プロファイルの `API_SERVER_KEY` です（そのプロファイルの `.env` にあります）。`HERMES_BOT` はプロファイル名です。一覧は `bots` で確認できます。
 
 | Tool | |
 |---|---|

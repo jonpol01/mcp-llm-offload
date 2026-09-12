@@ -72,6 +72,32 @@ The server is a thin, well-behaved MCP front-end. It resolves *which* backend an
 
 The diagram above shows the bigger picture this enables: small local models acting as autonomous "ninjas" that handle routine chores end-to-end, so Claude is never invoked for them.
 
+## Install as a Claude Code plugin
+
+The plugin bundles both servers and prompts for what they need, so there is nothing to
+register by hand:
+
+```bash
+/plugin marketplace add jonpol01/mcp-llm-offload
+/plugin install mcp-llm-offload@mcp-llm-offload
+```
+
+Claude Code then asks for the configuration — provider, model, and, if you run one, the
+Hermes bot's URL, key and name. Values marked sensitive go to your keychain rather than
+`settings.json`. Change them later with:
+
+```bash
+/plugin configure mcp-llm-offload@mcp-llm-offload
+```
+
+Two things to know before choosing this path:
+
+- **The plugin ships no subagent.** Claude Code namespaces a plugin's MCP servers, so the
+  bundled `llm-offloader` agent — whose frontmatter pins the unnamespaced
+  `mcp__offload__*` tool names — would load with no usable tools. Rather than ship that,
+  the plugin omits it; install the agent by hand (see below) if you want it.
+- `uv` still has to be on `PATH`, and you still need a backend to talk to.
+
 ## Quick start
 
 ### 1. Prerequisites
@@ -204,7 +230,7 @@ All configuration is via environment variables — none are required if the defa
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LLM_PROVIDER` | Default provider name (see table). | `lmstudio` |
+| `LLM_PROVIDER` | Default provider name (see table). | *(see precedence below)* |
 | `LLM_MODEL` | Default model id (as the provider names it). | *(unset)* |
 | `LLM_TIMEOUT` | Request timeout, seconds. | `300` |
 | `OFFLOAD_MAX_FILES` | Max files a `path` glob may match. | `50` |
@@ -214,6 +240,24 @@ All configuration is via environment variables — none are required if the defa
 | `<PROVIDER>_MODEL` | Default model for a specific provider. | `LLM_MODEL` |
 | `LLM_BASE_URL` / `LLM_API_KEY` | Generic fallbacks for the default provider. | — |
 | `OPENROUTER_REFERER` / `OPENROUTER_TITLE` | Optional OpenRouter ranking headers. | — |
+| `HERMES_BASE_URL` | A Hermes bot gateway, ending in `/v1`. Setting it makes `hermes` the default provider. | *(unset)* |
+| `HERMES_API_KEY` | That Hermes profile's `API_SERVER_KEY`. | *(unset)* |
+| `HERMES_BOT` | Bot (profile) name — used as the model for `hermes`, so you do not set it twice. | `HERMES_MODEL` |
+
+### Which provider a call uses
+
+A call that does not name a `provider` resolves in this order:
+
+1. **`LLM_PROVIDER`**, if set — an explicit choice always wins.
+2. **`hermes`**, if `HERMES_BASE_URL` is set. Configuring a bot is a deliberate act, so it
+   outranks the local fallback: if you run LM Studio *and* a bot, the bot gets the work
+   unless you say otherwise.
+3. **`lmstudio`** otherwise — only ever a fallback guess.
+
+Empty strings count as unset, so a config that passes an unset value straight through (as
+the plugin does) behaves exactly like not setting it.
+
+`health` reports which provider it resolved and why, so you never have to guess.
 
 See [`.env.example`](.env.example) for a copy-paste starting point.
 
@@ -269,11 +313,18 @@ export HERMES_BOT=github                             # a Hermes profile name
 uv run agent_mcp.py
 ```
 
-Register it under the MCP server name `agent`:
+Register it under the MCP server name `agent`, passing the settings as env:
 
 ```bash
-claude mcp add agent -s user -- uv run /absolute/path/to/agent_mcp.py
+claude mcp add agent \
+  -e HERMES_BASE_URL=http://192.168.1.50:8649/v1 \
+  -e HERMES_API_KEY=...  \
+  -e HERMES_BOT=github \
+  -- uv run /absolute/path/to/agent_mcp.py
 ```
+
+`HERMES_API_KEY` is the `API_SERVER_KEY` of the Hermes profile you are addressing — the
+one in that profile's `.env`. `HERMES_BOT` is the profile name; `bots` will list them.
 
 | Tool | |
 |---|---|
