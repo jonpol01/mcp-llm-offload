@@ -374,6 +374,37 @@ the tools above — `ask(provider="hermes")` once `HERMES_BASE_URL` and `HERMES_
 set. Prefer a cheap model there: those tools are annotated read-only, and an agent backing
 them can act.
 
+## Delivering drafted text (post_mcp.py)
+
+`llm_offload_mcp` drafts text and hands it back. It has no way to put that text anywhere, so
+anything you wanted delivered had to travel back through the calling model first — the cost this
+project exists to avoid. `post_mcp.py` is the optional companion that delivers it: Discord, Slack,
+Telegram, a Linear issue comment, a GitHub issue or PR comment, or a generic webhook (n8n and
+friends via `<NAME>_KIND`).
+
+**Not read-only.** It sends things to people, so it lives in its own opt-in server rather than
+being folded into the read-only tools — the same split `agent_mcp.py` follows.
+
+```bash
+claude mcp add post \
+  -e DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/... \
+  -- uv run /absolute/path/to/post_mcp.py
+```
+
+| Tool | |
+|---|---|
+| `post` | deliver one message to a configured target; `to` addresses the issue or PR where a target needs one |
+| `post_many` | the same message to several targets at once |
+| `targets` | list what is configured, and what each one still needs |
+
+Destinations and secrets are read only from the environment, never from tool arguments, so a prompt
+cannot redirect a message somewhere else. `dry_run` previews the exact request without sending it,
+and secrets are redacted from both previews and the `targets` listing.
+
+`examples/ninja.py` runs the whole loop with no Claude in it at all: gather input locally, let a
+local model draft it, deliver the result. Point it at cron for a status pipeline that costs zero
+frontier-model tokens.
+
 ## Troubleshooting
 
 | Symptom | Likely fix |
@@ -403,4 +434,4 @@ Issues and PRs welcome. Keep the server single-file and provider-neutral; new pr
 
 ## License
 
-[MIT](LICENSE) © John Paul Soliva
+[MIT](LICENSE) © Seaos Inc
