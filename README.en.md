@@ -362,6 +362,8 @@ uv run --with 'mcp<2' --with httpx python -c \
 ```
 
 CI (GitHub Actions) runs the same lint + import smoke test on every push and PR.
+Claude Code reads the plugin's own `.mcp.json` as **project** MCP config when you work inside this repo, and will offer to start `offload` and `agent` from it. Decline them. That file is the plugin's declaration, not a project setup: its paths only resolve once Claude Code expands `${CLAUDE_PLUGIN_ROOT}` for an installed plugin. If you have already registered `offload` yourself, approving the project copy would shadow your own registration.
+
 
 ## Contributing
 
