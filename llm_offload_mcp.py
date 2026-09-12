@@ -149,6 +149,14 @@ MAP_CONCURRENCY: int = int(os.environ.get("OFFLOAD_MAP_CONCURRENCY", "4"))
 # cost what an agent costs.
 ROUTING: str = (os.environ.get("OFFLOAD_ROUTING") or "single").strip().lower()
 
+# A second backend to try when the first is unreachable or out of quota — a bot you share
+# with a team is a single point of failure, and a small local model is a usable floor.
+# Only availability failures fall through; a misconfiguration is reported as itself,
+# because retrying it elsewhere would just hide the mistake.
+FALLBACK_PROVIDER: Optional[str] = (
+    (os.environ.get("LLM_FALLBACK_PROVIDER") or "").strip().lower() or None
+)
+
 LIGHT_OPS: frozenset = frozenset(
     {"summarize", "classify", "extract", "translate", "rewrite"}
 )
@@ -363,6 +371,20 @@ async def _chat(
     return (content or "").strip()
 
 
+def _is_availability_failure(e: Exception) -> bool:
+    """True when the backend is down, timing out, overloaded or out of quota.
+
+    Deliberately narrow: a 401, a 404 model or a bad base URL is a configuration error, and
+    falling back on those would mask the thing you actually need to fix.
+    """
+    if isinstance(e, (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout,
+                      httpx.RemoteProtocolError)):
+        return True
+    if isinstance(e, httpx.HTTPStatusError):
+        return e.response.status_code in (402, 408, 429) or e.response.status_code >= 500
+    return False
+
+
 async def _complete(
     messages: List[dict],
     provider: Optional[str],
@@ -387,7 +409,19 @@ async def _complete(
     try:
         return await _chat(base_url, api_key, mdl, messages, temperature, max_tokens)
     except Exception as e:  # converted to an actionable message, never raised to the client
-        return _handle_error(e, base_url, mdl)
+        primary = _handle_error(e, base_url, mdl)
+        if not (FALLBACK_PROVIDER and _is_availability_failure(e)
+                and FALLBACK_PROVIDER != _name):
+            return primary
+        try:
+            _n2, url2, key2, mdl2 = _resolve(FALLBACK_PROVIDER, None)
+        except ValueError:
+            return primary
+        try:
+            return await _chat(url2, key2, mdl2, messages, temperature, max_tokens)
+        except Exception:
+            # The floor failed too. Report the PRIMARY failure: that is the one to fix.
+            return primary
 
 
 def _try_load(s: str) -> tuple[bool, Optional[str]]:
@@ -963,6 +997,7 @@ async def health(
             "provider": name,
             "provider_chosen_because": _why_default() if provider is None else "provider argument",
             "routing": ROUTING,
+            "fallback_provider": FALLBACK_PROVIDER or "(none — a failure is reported, not retried)",
             "routes": ({"light ops (" + ", ".join(sorted(LIGHT_OPS)) + ")": _routed_provider("summarize") or name,
                         "everything else": _routed_provider("ask") or name}
                        if ROUTING == "spread" else "single — every op uses this provider"),
