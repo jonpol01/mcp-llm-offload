@@ -1,7 +1,7 @@
 {
   "name": "mcp-llm-offload",
   "displayName": "LLM Offload",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Offload light LLM work to a local model or any OpenAI-compatible provider, and delegate whole tasks to a Hermes bot.",
   "homepage": "https://github.com/seaosinc/mcp-llm-offload",
   "license": "MIT",
@@ -54,6 +54,12 @@
       "type": "string",
       "title": "Heavy backend URL (spread only)",
       "description": "Only if the heavy backend is not on its default host. A Hermes bot is already covered by the Hermes gateway URL below.",
+      "default": ""
+    },
+    "fallback_provider": {
+      "type": "string",
+      "title": "Fallback backend",
+      "description": "Tried when the main backend is unreachable, timing out, overloaded or out of quota \u2014 e.g. lmstudio as a floor behind a shared bot. Configuration errors like a bad key are reported as themselves, never retried elsewhere.",
       "default": ""
     },
     "llm_model": {
