@@ -92,7 +92,7 @@ Run it standalone to confirm it starts (it serves MCP over stdio, so it will wai
 uv run llm_offload_mcp.py
 ```
 
-> No `uv`? `pip install mcp httpx` then `python llm_offload_mcp.py`.
+> No `uv`? `pip install 'mcp<2' httpx` then `python llm_offload_mcp.py`.
 
 ### 3. Register with Claude Code
 
@@ -260,8 +260,8 @@ cp agents/en/mid-tier.md ~/.claude/agents/
 ## Development
 
 ```bash
-uvx ruff check .          # lint
-uv run --with mcp --with httpx python -c \
+uvx ruff@0.15.0 check .   # lint
+uv run --with 'mcp<2' --with httpx python -c \
   "import importlib.util as u; s=u.spec_from_file_location('m','llm_offload_mcp.py'); m=u.module_from_spec(s); s.loader.exec_module(m); print('ok', m.mcp.name)"
 ```
 

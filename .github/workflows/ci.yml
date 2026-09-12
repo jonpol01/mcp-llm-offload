@@ -15,11 +15,11 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Lint (ruff)
-        run: uvx ruff check .
+        run: uvx ruff@0.15.0 check .
 
       - name: Import smoke test
         run: >
-          uv run --with mcp --with httpx python -c
+          uv run --with 'mcp<2' --with httpx python -c
           "import importlib.util as u;
           s = u.spec_from_file_location('m', 'llm_offload_mcp.py');
           m = u.module_from_spec(s);
