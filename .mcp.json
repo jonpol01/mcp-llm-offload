@@ -13,7 +13,10 @@
         "LLM_API_KEY": "${user_config.llm_api_key}",
         "HERMES_BASE_URL": "${user_config.hermes_base_url}",
         "HERMES_API_KEY": "${user_config.hermes_api_key}",
-        "HERMES_BOT": "${user_config.hermes_bot}"
+        "HERMES_BOT": "${user_config.hermes_bot}",
+        "OFFLOAD_ROUTING": "${user_config.routing}",
+        "OFFLOAD_LIGHT_PROVIDER": "${user_config.light_provider}",
+        "OFFLOAD_HEAVY_PROVIDER": "${user_config.heavy_provider}"
       }
     },
     "agent": {
