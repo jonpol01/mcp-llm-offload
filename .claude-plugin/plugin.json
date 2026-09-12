@@ -38,10 +38,22 @@
       "description": "Provider for cheap structured ops, e.g. lmstudio. Leave empty to use the provider above.",
       "default": ""
     },
+    "light_base_url": {
+      "type": "string",
+      "title": "Light backend URL (spread only)",
+      "description": "Only if the light backend is not on its default host, e.g. LM Studio on another machine: http://192.168.1.50:1234/v1",
+      "default": ""
+    },
     "heavy_provider": {
       "type": "string",
       "title": "Heavy backend (spread only)",
       "description": "Provider for generation and judgement, e.g. hermes. Leave empty to use the provider above.",
+      "default": ""
+    },
+    "heavy_base_url": {
+      "type": "string",
+      "title": "Heavy backend URL (spread only)",
+      "description": "Only if the heavy backend is not on its default host. A Hermes bot is already covered by the Hermes gateway URL below.",
       "default": ""
     },
     "llm_model": {

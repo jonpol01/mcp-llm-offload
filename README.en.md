@@ -240,6 +240,9 @@ All configuration is via environment variables — none are required if the defa
 | `<PROVIDER>_MODEL` | Default model for a specific provider. | `LLM_MODEL` |
 | `LLM_BASE_URL` / `LLM_API_KEY` | Generic fallbacks for the default provider. | — |
 | `OPENROUTER_REFERER` / `OPENROUTER_TITLE` | Optional OpenRouter ranking headers. | — |
+| `OFFLOAD_ROUTING` | `single` (default) or `spread` — see below. | `single` |
+| `OFFLOAD_LIGHT_PROVIDER` / `OFFLOAD_HEAVY_PROVIDER` | Where each half of a `spread` goes. | default provider |
+| `OFFLOAD_LIGHT_BASE_URL` / `OFFLOAD_HEAVY_BASE_URL` | Only when a routed backend is not on its default host. | preset |
 | `HERMES_BASE_URL` | A Hermes bot gateway, ending in `/v1`. Setting it makes `hermes` the default provider. | *(unset)* |
 | `HERMES_API_KEY` | That Hermes profile's `API_SERVER_KEY`. | *(unset)* |
 | `HERMES_BOT` | Bot (profile) name — used as the model for `hermes`, so you do not set it twice. | `HERMES_MODEL` |
@@ -276,6 +279,12 @@ the same work, an order of magnitude apart.
 Either variable may be left unset, in which case that half falls back to the default
 provider rather than guessing at a backend you never named. A per-call `provider=`
 argument still wins over routing, so you can always place one job by hand.
+
+If a routed backend is not on its default host — LM Studio on another machine, say —
+set `OFFLOAD_LIGHT_BASE_URL` or `OFFLOAD_HEAVY_BASE_URL`. `LLM_BASE_URL` cannot cover
+this: it applies only to the default provider, and a plugin cannot name
+`<PROVIDER>_BASE_URL` in advance because that variable depends on which provider you
+pick. An explicit `<PROVIDER>_BASE_URL` still outranks both.
 
 `health` reports the mode and where each half is going.
 
