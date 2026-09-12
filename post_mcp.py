@@ -51,7 +51,7 @@ import os
 import re
 from pathlib import Path
 from typing import Annotated, List, Optional
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -69,7 +69,12 @@ LIMITS = {"discord": 2000, "telegram": 4096}
 
 UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 IDENT_RE = re.compile(r"([A-Za-z][A-Za-z0-9]*)-(\d+)")
-GH_RE = re.compile(r"([^/\s]+)/([^#\s]+)#(\d+)")
+# GitHub's real slug rules: an owner is alphanumeric with internal hyphens (39 max),
+# a repo also allows dot and underscore (100 max). The repo group must never admit
+# "/" — httpx resolves dot segments BEFORE sending, so a repo of "../../user/repos"
+# turns owner/repo#n into a POST anywhere under api.github.com, carrying the token.
+# `to` is caller-supplied, so that is reachable from a prompt, not just by the user.
+GH_RE = re.compile(r"([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})#(\d+)")
 
 mcp = FastMCP("llm_post_mcp")
 
@@ -301,7 +306,14 @@ async def _send_github(name, prefix, text, to, title, username, dry_run):
     if not m:
         raise ValueError(f"github target needs to='owner/repo#number', got '{to}'.")
     owner, repo, number = m.group(1), m.group(2), m.group(3)
-    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{number}/comments"
+    # A repo of "." or ".." still satisfies the character class above and would climb
+    # a path segment, so reject dot segments outright, then percent-encode both parts.
+    if repo in (".", ".."):
+        raise ValueError(f"github target got a dot-segment repo in '{to}'.")
+    url = (
+        "https://api.github.com/repos/"
+        f"{quote(owner, safe='')}/{quote(repo, safe='')}/issues/{number}/comments"
+    )
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
