@@ -1,0 +1,37 @@
+{
+  "mcpServers": {
+    "offload": {
+      "command": "uv",
+      "args": [
+        "run",
+        "${CLAUDE_PLUGIN_ROOT}/llm_offload_mcp.py"
+      ],
+      "env": {
+        "LLM_PROVIDER": "${user_config.llm_provider}",
+        "LLM_MODEL": "${user_config.llm_model}",
+        "LLM_BASE_URL": "${user_config.llm_base_url}",
+        "LLM_API_KEY": "${user_config.llm_api_key}",
+        "HERMES_BASE_URL": "${user_config.hermes_base_url}",
+        "HERMES_API_KEY": "${user_config.hermes_api_key}",
+        "HERMES_BOT": "${user_config.hermes_bot}",
+        "OFFLOAD_ROUTING": "${user_config.routing}",
+        "OFFLOAD_LIGHT_PROVIDER": "${user_config.light_provider}",
+        "OFFLOAD_HEAVY_PROVIDER": "${user_config.heavy_provider}",
+        "OFFLOAD_LIGHT_BASE_URL": "${user_config.light_base_url}",
+        "OFFLOAD_HEAVY_BASE_URL": "${user_config.heavy_base_url}"
+      }
+    },
+    "agent": {
+      "command": "uv",
+      "args": [
+        "run",
+        "${CLAUDE_PLUGIN_ROOT}/agent_mcp.py"
+      ],
+      "env": {
+        "HERMES_BASE_URL": "${user_config.hermes_base_url}",
+        "HERMES_API_KEY": "${user_config.hermes_api_key}",
+        "HERMES_BOT": "${user_config.hermes_bot}"
+      }
+    }
+  }
+}
