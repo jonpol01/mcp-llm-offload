@@ -319,6 +319,27 @@ export HERMES_BOT=github                             # a Hermes profile name
 uv run agent_mcp.py
 ```
 
+### ボットをバックエンドとして動かす
+
+新規の Hermes プロファイルは何も提供しません。OpenAI 互換エンドポイントを起動するのは、そのプロファイルの `.env` にある API キーです。キーがなければプラットフォームは起動を拒否し、唯一の兆候は何も待ち受けていないことだけです。
+
+```bash
+# ~/.hermes/profiles/<name>/.env
+API_SERVER_KEY=$(openssl rand -hex 32)   # 必須: キーなしではリスナーなし
+API_SERVER_PORT=8649                     # デフォルトは 8642、プロファイルごとに 1 ポート
+API_SERVER_HOST=0.0.0.0                  # Claude Code が別マシンで動く場合のみ
+```
+
+`API_SERVER_HOST` のデフォルトは `127.0.0.1` です。Claude Code と別のマシン上のボットは、この値を広げない限り接続を拒否します。ネットワークの問題に見えて、実際は設定の問題です。午後を丸ごと潰されやすい設定です。
+
+そのプロファイルのゲートウェイを再起動し、Claude Code に一切触れる前にエンドポイントを確認してください。
+
+```bash
+curl -H "Authorization: Bearer $API_SERVER_KEY" http://<host>:<port>/v1/models
+```
+
+返ってくる `id` はプロファイル名です。その文字列が `HERMES_BOT` の求める値であり、`delegate(bot=…)` が指す先です。OpenAI API から見ると、ボットが「モデル」です。
+
 MCP サーバー名 `agent` として登録し、設定は環境変数で渡します。
 
 ```bash
