@@ -296,6 +296,24 @@ the per-call escape to a local model silently aims at localhost and fails.
 
 `health` reports the mode and where each half is going.
 
+### When the backend is down
+
+A bot shared with a team is a single point of failure, and a quota runs out at the worst moment.
+`LLM_FALLBACK_PROVIDER` names a second backend to try when the first is unreachable, timing out,
+overloaded or out of credit — a small local model is a usable floor behind a strong remote one.
+
+```bash
+export LLM_PROVIDER=hermes            # the bot does the work
+export LLM_FALLBACK_PROVIDER=lmstudio # …unless it cannot, then this does
+```
+
+Only availability failures fall through: connection refused, a timeout, `429`, `402`, or a `5xx`.
+A configuration error — a bad key, a model the provider does not serve — is reported as itself,
+because retrying it somewhere else would hide the thing you need to fix. If the fallback fails too,
+you get the *original* error, since that is the one worth acting on.
+
+`health` reports which fallback is configured, or that there is none.
+
 See [`.env.example`](.env.example) for a copy-paste starting point.
 
 ## The Claude Code subagent (optional)
