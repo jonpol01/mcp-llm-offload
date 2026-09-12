@@ -21,7 +21,7 @@ jobs:
         run: |
           uv run --with 'mcp<2' --with httpx python - <<'PY'
           import importlib.util as u
-          for f in ("llm_offload_mcp.py", "agent_mcp.py"):
+          for f in ("llm_offload_mcp.py", "agent_mcp.py", "post_mcp.py"):
               spec = u.spec_from_file_location("m", f)
               mod = u.module_from_spec(spec)
               spec.loader.exec_module(mod)

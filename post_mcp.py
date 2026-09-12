@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["mcp>=1.2.0", "httpx>=0.27"]
+# dependencies = ["mcp>=1.2,<2", "httpx>=0.27"]
 # ///
 """llm_post_mcp — optional companion to llm_offload_mcp: deliver text to outbound targets.
 
