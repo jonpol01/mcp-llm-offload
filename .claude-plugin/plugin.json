@@ -26,6 +26,24 @@
       "description": "lmstudio, ollama, llamacpp, openrouter, grok, openai, groq, together, deepinfra, mistral, hermes. Leave empty to decide automatically: a Hermes bot if you configure one below, otherwise LM Studio.",
       "default": ""
     },
+    "routing": {
+      "type": "string",
+      "title": "Routing",
+      "description": "single = send every job to the provider above. spread = split by cost: summarize/classify/extract/translate/rewrite go to the light backend, and ask/commit_message/pr_description/changelog/mock_data go to the heavy one.",
+      "default": "single"
+    },
+    "light_provider": {
+      "type": "string",
+      "title": "Light backend (spread only)",
+      "description": "Provider for cheap structured ops, e.g. lmstudio. Leave empty to use the provider above.",
+      "default": ""
+    },
+    "heavy_provider": {
+      "type": "string",
+      "title": "Heavy backend (spread only)",
+      "description": "Provider for generation and judgement, e.g. hermes. Leave empty to use the provider above.",
+      "default": ""
+    },
     "llm_model": {
       "type": "string",
       "title": "Model",

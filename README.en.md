@@ -259,6 +259,26 @@ the plugin does) behaves exactly like not setting it.
 
 `health` reports which provider it resolved and why, so you never have to guess.
 
+### Spreading work across backends
+
+`single`, the default, sends every op to the provider resolved above. Set
+`OFFLOAD_ROUTING=spread` to split the work by what it costs instead:
+
+| ops | go to |
+|---|---|
+| `summarize` `classify` `extract` `translate` `rewrite` — and `map`, which runs them | `OFFLOAD_LIGHT_PROVIDER` |
+| `ask` `commit_message` `pr_description` `changelog` `mock_data` | `OFFLOAD_HEAVY_PROVIDER` |
+
+A summarize should not cost what an agent costs. Pointing the light half at a small
+local model and the heavy half at a Hermes bot measured 0.6s against 6.6s per call —
+the same work, an order of magnitude apart.
+
+Either variable may be left unset, in which case that half falls back to the default
+provider rather than guessing at a backend you never named. A per-call `provider=`
+argument still wins over routing, so you can always place one job by hand.
+
+`health` reports the mode and where each half is going.
+
 See [`.env.example`](.env.example) for a copy-paste starting point.
 
 ## The Claude Code subagent (optional)

@@ -99,6 +99,19 @@ def _default_provider() -> str:
     return "lmstudio"
 
 
+def _routed_provider(op: Optional[str]) -> Optional[str]:
+    """Provider for *op* under spread routing, or None to use the normal default.
+
+    Deliberately returns None when the relevant variable is unset: an unconfigured
+    half of the split falls back to the default provider rather than guessing at a
+    backend the user never named.
+    """
+    if ROUTING != "spread" or not op:
+        return None
+    var = "OFFLOAD_LIGHT_PROVIDER" if op in LIGHT_OPS else "OFFLOAD_HEAVY_PROVIDER"
+    return (os.environ.get(var) or "").strip().lower() or None
+
+
 def _why_default() -> str:
     """Plain-language reason the default provider is what it is, for `health`."""
     if (os.environ.get("LLM_PROVIDER") or "").strip():
@@ -114,6 +127,17 @@ TIMEOUT: float = float(os.environ.get("LLM_TIMEOUT", "300"))
 MAX_PATH_FILES: int = int(os.environ.get("OFFLOAD_MAX_FILES", "50"))
 MAX_PATH_CHARS: int = int(os.environ.get("OFFLOAD_MAX_CHARS", "100000"))
 MAP_CONCURRENCY: int = int(os.environ.get("OFFLOAD_MAP_CONCURRENCY", "4"))
+
+# --- Routing -----------------------------------------------------------------
+# "single" sends every op to the resolved default provider. "spread" splits the
+# work by what it costs: cheap structured ops go to a small local model, while
+# generation and judgement go to the stronger backend. A summarize should not
+# cost what an agent costs.
+ROUTING: str = (os.environ.get("OFFLOAD_ROUTING") or "single").strip().lower()
+
+LIGHT_OPS: frozenset = frozenset(
+    {"summarize", "classify", "extract", "translate", "rewrite"}
+)
 
 mcp = FastMCP("llm_offload_mcp")
 
@@ -328,10 +352,15 @@ async def _complete(
     model: Optional[str],
     temperature: float,
     max_tokens: int,
+    op: Optional[str] = None,
 ) -> str:
-    """Resolve config, call the model, and return the text or an 'Error: ...' string."""
+    """Resolve config, call the model, and return the text or an 'Error: ...' string.
+
+    *op* names the calling tool so spread routing can place it. An explicit
+    ``provider`` argument always wins over routing.
+    """
     try:
-        _name, base_url, api_key, mdl = _resolve(provider, model)
+        _name, base_url, api_key, mdl = _resolve(provider or _routed_provider(op), model)
     except ValueError as e:
         return f"Error: {e}"
     try:
@@ -440,7 +469,7 @@ async def ask(
             user = f"{prompt}\n\n----- file: {path} -----\n{_read_path(path)}"
         except ValueError as e:
             return f"Error: {e}"
-    return await _complete(_build_messages(user, system), provider, model, temperature, max_tokens)
+    return await _complete(_build_messages(user, system), provider, model, temperature, max_tokens, op="ask")
 
 
 @mcp.tool(
@@ -475,7 +504,7 @@ async def summarize(
         f"You are a precise summarizer. Produce a faithful summary in about {max_words} "
         f"words or fewer.{style_hint} Do not invent information that is not present in the input."
     )
-    return await _complete(_build_messages(src, system), provider, model, 0.3, max(64, max_words * 3))
+    return await _complete(_build_messages(src, system), provider, model, 0.3, max(64, max_words * 3), op="summarize")
 
 
 @mcp.tool(
@@ -510,7 +539,7 @@ async def classify(
         "You are a single-label text classifier. Read the input and respond with EXACTLY "
         f"ONE of these labels and nothing else: {label_list}."
     )
-    raw = await _complete(_build_messages(src, system), provider, model, 0.0, 32)
+    raw = await _complete(_build_messages(src, system), provider, model, 0.0, 32, op="classify")
     if raw.startswith("Error:"):
         return raw
 
@@ -562,7 +591,7 @@ async def extract(
         f"respond with a single valid JSON value only — no markdown, no commentary.{schema_hint} "
         f"Fields/instructions: {instructions}"
     )
-    raw = await _complete(_build_messages(src, system), provider, model, 0.0, 1024)
+    raw = await _complete(_build_messages(src, system), provider, model, 0.0, 1024, op="extract")
     if raw.startswith("Error:"):
         return raw
     cleaned = _isolate_json(raw)
@@ -575,7 +604,7 @@ async def extract(
             "Your previous output was not valid JSON. Return ONLY the JSON value for the requested "
             "fields — no prose, no markdown, no trailing commas.",
         ),
-        provider, model, 0.0, 1024,
+        provider, model, 0.0, 1024, op="extract",
     )
     if not repair.startswith("Error:"):
         repaired = _isolate_json(repair)
@@ -617,7 +646,7 @@ async def translate(
         f"tone, Markdown structure, and code / inline code verbatim.{style_hint} Output only the "
         "translation, with no preamble or commentary."
     )
-    return await _complete(_build_messages(src, system), provider, model, 0.2, 4096)
+    return await _complete(_build_messages(src, system), provider, model, 0.2, 4096, op="translate")
 
 
 @mcp.tool(
@@ -651,7 +680,7 @@ async def rewrite(
         f"You are a careful editor. Rewrite the input to be {goal}, preserving meaning and any code "
         "or Markdown. Output only the rewritten text, with no preamble or commentary."
     )
-    return await _complete(_build_messages(src, system), provider, model, 0.4, 2048)
+    return await _complete(_build_messages(src, system), provider, model, 0.4, 2048, op="rewrite")
 
 
 @mcp.tool(
@@ -689,7 +718,7 @@ async def commit_message(
         "`type(scope): summary` subject in imperative mood, <= 72 chars, plus a short body only if the "
         f"change is non-trivial.{style_hint} Output only the commit message — no fences, no commentary."
     )
-    raw = await _complete(_build_messages(src, system), provider, model, 0.3, 320)
+    raw = await _complete(_build_messages(src, system), provider, model, 0.3, 320, op="commit_message")
     return raw if raw.startswith("Error:") else _unfence(raw)
 
 
@@ -722,7 +751,7 @@ async def mock_data(
         f"You are a test-data generator. Produce {count} realistic but entirely FAKE records matching "
         f"this spec, formatted as {fmt}. Vary the values. Output only the data — no prose, no commentary."
     )
-    raw = await _complete(_build_messages(spec, system), provider, model, 0.8, min(8192, max(512, count * 150)))
+    raw = await _complete(_build_messages(spec, system), provider, model, 0.8, min(8192, max(512, count * 150)), op="mock_data")
     if raw.startswith("Error:"):
         return raw
     return _isolate_json(raw) if fmt.lower() == "json" else _unfence(raw)
@@ -764,7 +793,7 @@ async def pr_description(
         "change is correct, complete, or bug-free, and never invent motivation not present in the diff "
         "or intent. Output only the description in Markdown."
     )
-    raw = await _complete(_build_messages(src, system), provider, model, 0.3, 700)
+    raw = await _complete(_build_messages(src, system), provider, model, 0.3, 700, op="pr_description")
     return raw if raw.startswith("Error:") else _unfence(raw)
 
 
@@ -807,7 +836,7 @@ async def changelog(
         f"faithfully and concisely. Never invent features, fixes, or versions not present in the input.{version_hint} "
         "Output only the release notes in Markdown."
     )
-    raw = await _complete(_build_messages(src, system), provider, model, 0.3, 800)
+    raw = await _complete(_build_messages(src, system), provider, model, 0.3, 800, op="changelog")
     return raw if raw.startswith("Error:") else _unfence(raw)
 
 
@@ -912,6 +941,10 @@ async def health(
         {
             "provider": name,
             "provider_chosen_because": _why_default() if provider is None else "provider argument",
+            "routing": ROUTING,
+            "routes": ({"light ops (" + ", ".join(sorted(LIGHT_OPS)) + ")": _routed_provider("summarize") or name,
+                        "everything else": _routed_provider("ask") or name}
+                       if ROUTING == "spread" else "single — every op uses this provider"),
             "base_url": base_url,
             "api_key_present": bool(api_key),
             "configured_model": mdl,
