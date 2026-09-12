@@ -345,6 +345,32 @@ export HERMES_BOT=github                             # a Hermes profile name
 uv run agent_mcp.py
 ```
 
+### Making a bot serve as a backend
+
+A fresh Hermes profile serves nothing. What starts its OpenAI-compatible endpoint is an
+API key in that profile's `.env` — without one the platform refuses to start, and the only
+sign is that nothing is listening.
+
+```bash
+# ~/.hermes/profiles/<name>/.env
+API_SERVER_KEY=$(openssl rand -hex 32)   # required: no key, no listener
+API_SERVER_PORT=8649                     # default 8642, and one port per profile
+API_SERVER_HOST=0.0.0.0                  # only if Claude Code runs on a different machine
+```
+
+`API_SERVER_HOST` defaults to `127.0.0.1`. A bot on a different box than Claude Code will
+refuse connections until you widen it, which looks like a network problem rather than a
+configuration one — it is the setting most likely to cost you an afternoon.
+
+Restart that profile's gateway, then prove the endpoint before touching Claude Code at all:
+
+```bash
+curl -H "Authorization: Bearer $API_SERVER_KEY" http://<host>:<port>/v1/models
+```
+
+The `id` it returns is the profile name. That string is what `HERMES_BOT` wants, and what
+`delegate(bot=…)` addresses — the bot is the "model" as far as the OpenAI API is concerned.
+
 Register it under the MCP server name `agent`, passing the settings as env:
 
 ```bash
