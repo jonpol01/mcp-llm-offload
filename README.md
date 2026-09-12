@@ -234,6 +234,9 @@ Claude Code で `health` ツールを実行（または Claude に頼む）し�
 | `<PROVIDER>_MODEL` | 特定プロバイダの既定モデル。 | `LLM_MODEL` |
 | `LLM_BASE_URL` / `LLM_API_KEY` | 既定プロバイダ向けの汎用フォールバック。 | — |
 | `OPENROUTER_REFERER` / `OPENROUTER_TITLE` | OpenRouter のランキング用ヘッダ（任意）。 | — |
+| `OFFLOAD_ROUTING` | `single`（デフォルト）または `spread`。下記参照。 | `single` |
+| `OFFLOAD_LIGHT_PROVIDER` / `OFFLOAD_HEAVY_PROVIDER` | `spread` の各半分の送信先。 | デフォルトのプロバイダー |
+| `OFFLOAD_LIGHT_BASE_URL` / `OFFLOAD_HEAVY_BASE_URL` | ルーティング先がデフォルトのホスト上にない場合のみ。 | プリセット |
 | `HERMES_BASE_URL` | `/v1` で終わる Hermes ボットのゲートウェイです。設定すると、デフォルトのプロバイダーが `hermes` になります。 | *(未設定)* |
 | `HERMES_API_KEY` | その Hermes プロファイルの `API_SERVER_KEY` です。 | *(未設定)* |
 | `HERMES_BOT` | ボット（プロファイル）名です。`hermes` のモデルとして使うため、二重に設定する必要はありません。 | `HERMES_MODEL` |
@@ -262,6 +265,8 @@ Claude Code で `health` ツールを実行（または Claude に頼む）し�
 要約に、エージェントと同じコストをかけるべきではありません。ライト側を小さなローカルモデルに、ヘビー側を Hermes ボットに向けた計測では、1 回の呼び出しあたり 0.6 秒対 6.6 秒でした。同じ作業でも、桁がひとつ違います。
 
 どちらの変数も未設定のままで構いません。その場合、その半分は、一度も指定していないバックエンドを推測するのではなく、デフォルトのプロバイダーにフォールバックします。呼び出しごとの `provider=` 引数はルーティングより優先されるため、個別のジョブをいつでも手動で配置できます。
+
+ルーティングされたバックエンドがデフォルトのホスト上にない場合（たとえば別マシン上の LM Studio）は、`OFFLOAD_LIGHT_BASE_URL` または `OFFLOAD_HEAVY_BASE_URL` を設定してください。`LLM_BASE_URL` ではこれをカバーできません。この変数はデフォルトのプロバイダーにのみ適用され、プラグインは事前に `<PROVIDER>_BASE_URL` を指定できません。その変数はどのプロバイダーを選ぶかに依存するからです。明示的な `<PROVIDER>_BASE_URL` は、どちらよりも優先されます。
 
 `health` は、モードと各半分の送信先を報告します。
 

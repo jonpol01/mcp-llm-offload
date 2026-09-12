@@ -112,6 +112,20 @@ def _routed_provider(op: Optional[str]) -> Optional[str]:
     return (os.environ.get(var) or "").strip().lower() or None
 
 
+def _routed_base_url(op: Optional[str]) -> Optional[str]:
+    """Base URL for the backend spread routing picked for *op*, if one was given.
+
+    A plugin cannot name `<PROVIDER>_BASE_URL` ahead of time — the variable depends on
+    which provider you pick — and `LLM_BASE_URL` only ever applies to the default
+    provider. Without this, a routed backend living on another host is unreachable:
+    routing would resolve it to the preset localhost URL and quietly fail.
+    """
+    if ROUTING != "spread" or not op:
+        return None
+    var = "OFFLOAD_LIGHT_BASE_URL" if op in LIGHT_OPS else "OFFLOAD_HEAVY_BASE_URL"
+    return (os.environ.get(var) or "").strip() or None
+
+
 def _why_default() -> str:
     """Plain-language reason the default provider is what it is, for `health`."""
     if (os.environ.get("LLM_PROVIDER") or "").strip():
@@ -145,13 +159,15 @@ mcp = FastMCP("llm_offload_mcp")
 # --- Configuration resolution ------------------------------------------------
 
 def _resolve(
-    provider: Optional[str], model: Optional[str], *, require_model: bool = True
+    provider: Optional[str], model: Optional[str], *, require_model: bool = True,
+    base_url_override: Optional[str] = None,
 ) -> tuple[str, str, Optional[str], Optional[str]]:
     """Resolve (provider, base_url, api_key, model) for a single call.
 
     Precedence:
         provider : arg -> LLM_PROVIDER -> 'lmstudio'
-        base_url : <PROVIDER>_BASE_URL -> LLM_BASE_URL (default provider only) -> preset
+        base_url : <PROVIDER>_BASE_URL -> routed override -> LLM_BASE_URL (default
+                   provider only) -> preset
         api_key  : <PROVIDER>_API_KEY -> preset key_env -> LLM_API_KEY
         model    : arg -> <PROVIDER>_MODEL -> LLM_MODEL
 
@@ -164,6 +180,7 @@ def _resolve(
 
     base_url = (
         os.environ.get(f"{env}_BASE_URL")
+        or base_url_override
         or (os.environ.get("LLM_BASE_URL") if name == DEFAULT_PROVIDER else None)
         or spec.get("base_url")
     )
@@ -359,8 +376,12 @@ async def _complete(
     *op* names the calling tool so spread routing can place it. An explicit
     ``provider`` argument always wins over routing.
     """
+    routed = _routed_provider(op) if provider is None else None
     try:
-        _name, base_url, api_key, mdl = _resolve(provider or _routed_provider(op), model)
+        _name, base_url, api_key, mdl = _resolve(
+            provider or routed, model,
+            base_url_override=_routed_base_url(op) if routed else None,
+        )
     except ValueError as e:
         return f"Error: {e}"
     try:
