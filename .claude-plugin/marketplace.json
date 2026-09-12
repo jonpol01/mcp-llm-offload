@@ -2,7 +2,7 @@
   "name": "mcp-llm-offload",
   "description": "Tools that move light LLM work off frontier-model quota: a local or hosted model for text, a Hermes bot for whole tasks.",
   "owner": {
-    "name": "jonpol01"
+    "name": "seaosinc"
   },
   "plugins": [
     {

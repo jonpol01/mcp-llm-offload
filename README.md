@@ -4,7 +4,7 @@
 
 > Claude（や任意の MCP クライアント）の**軽量な LLM 作業**を、自分で管理するモデル — **ローカル** LLM（LM Studio・Ollama・llama.cpp）や **OpenAI 互換の任意プロバイダ**（OpenRouter・xAI Grok・OpenAI・Groq・Together など）— にオフロードする MCP サーバーです。安価で重要度の低い処理に、フロンティアモデルのクォータを浪費せずに済みます。
 
-[![CI](https://github.com/jonpol01/mcp-llm-offload/actions/workflows/ci.yml/badge.svg)](https://github.com/jonpol01/mcp-llm-offload/actions/workflows/ci.yml)
+[![CI](https://github.com/seaosinc/mcp-llm-offload/actions/workflows/ci.yml/badge.svg)](https://github.com/seaosinc/mcp-llm-offload/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![MCP](https://img.shields.io/badge/MCP-compatible-8A2BE2.svg)](https://modelcontextprotocol.io)
@@ -25,11 +25,14 @@
 
 - 🔀 **プロバイダ非依存** — サーバーは 1 つ、相手は任意の OpenAI 互換エンドポイント。主要なものはプリセット済み、それ以外は自分で追加できます。
 - 🏠 **ローカルファースト** — 既定はローカルの LM Studio。ローカルバックエンドなら API キー不要です。
-- 🎯 **目的特化のツール** — `ask`・`summarize`・`classify`・`extract`・`health`。素のチャット中継ではなく、軽量タスク向けに整形されています。
+- 🎯 **目的特化のツール** — `ask`・`summarize`・`classify`・`extract`・`translate`・`rewrite`・`commit_message`・`pr_description`・`changelog`・`mock_data`・`map`・`health`。素のチャット中継ではなく、軽量タスク向けに整形されています。
 - 🧭 **呼び出しごとのルーティング** — 各ツールは `provider` と `model` を任意で受け取ります。安価な処理はローカルへ、*少しだけ*難しい処理は再設定なしで Grok / OpenRouter へ回せます。
 - 📂 **ファイル入力** — `summarize`/`classify`/`extract` は `path`（ファイルまたは glob）を受け取り、サーバーがローカルで読み込みます。呼び出し側はパスだけを送るため、*大きな*入力のオフロードで実際にトークンを節約できます。
 - 🩺 **実用的なエラー** — 接続・タイムアウト・認証・モデル 404・レート制限の失敗は、スタックトレースではなく「次にこうすればよい」という平易な文字列で返ります。
 - 📦 **単一ファイル・インストール不要** — [PEP 723](https://peps.python.org/pep-0723/) のインライン依存により `uv run llm_offload_mcp.py` だけで動きます。
+- 🧑‍🚀 **タスク全体を委任** — 付属の `agent_mcp.py` が、シェル、ファイルシステム、`gh` CLI を持つ [Hermes](https://github.com/NousResearch/hermes-agent) ボットにジョブを渡すので、作業の根拠となった差分とログがあなたのコンテキストに入ることはありません。
+- ⚖️ **スプレッドルーティング** — `single` はすべてを1 つのバックエンドに載せます。`spread` は安価な構造化オペレーションを小型のローカルモデルに送り、生成はより強力なモデルに残します。同じ要約の実測は、両者で0.6 秒対 6.6 秒でした。
+- 🔌 **Claude Code プラグインとしてインストール可能** — 両方のサーバーに対応し、有効化時に設定の入力を求め、キーはキーチェーンに保管します。
 - 🤖 **Claude Code サブエージェント同梱** — 軽量作業を自動で振り分ける `llm-offloader` エージェントを任意で利用できます。
 
 ## 推奨ローカルモデル
@@ -77,7 +80,7 @@ Claude Code ──stdio──▶ mcp-llm-offload ──HTTP /v1/chat/completions
 プラグインはサーバーと、それらが必要とするプロンプトをまとめて同梱しているため、手作業で登録するものはありません。
 
 ```bash
-/plugin marketplace add jonpol01/mcp-llm-offload
+/plugin marketplace add seaosinc/mcp-llm-offload
 /plugin install mcp-llm-offload@mcp-llm-offload
 ```
 
@@ -102,7 +105,7 @@ Claude Code ──stdio──▶ mcp-llm-offload ──HTTP /v1/chat/completions
 ### 2. 取得
 
 ```bash
-git clone https://github.com/jonpol01/mcp-llm-offload.git
+git clone https://github.com/seaosinc/mcp-llm-offload.git
 cd mcp-llm-offload
 ```
 

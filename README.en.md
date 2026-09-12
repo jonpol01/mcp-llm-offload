@@ -4,7 +4,7 @@
 
 > An MCP server that offloads **light LLM work** from Claude (or any MCP client) to a model you control — a **local** LLM (LM Studio, Ollama, llama.cpp) or **any OpenAI-compatible provider** (OpenRouter, xAI Grok, OpenAI, Groq, Together…). Save frontier-model quota on the cheap, non-critical stuff.
 
-[![CI](https://github.com/jonpol01/mcp-llm-offload/actions/workflows/ci.yml/badge.svg)](https://github.com/jonpol01/mcp-llm-offload/actions/workflows/ci.yml)
+[![CI](https://github.com/seaosinc/mcp-llm-offload/actions/workflows/ci.yml/badge.svg)](https://github.com/seaosinc/mcp-llm-offload/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![MCP](https://img.shields.io/badge/MCP-compatible-8A2BE2.svg)](https://modelcontextprotocol.io)
@@ -25,11 +25,14 @@ Frontier models are great, but a lot of day-to-day agent work is *light*: summar
 
 - 🔀 **Provider-agnostic** — one server, any OpenAI-compatible endpoint. Presets for the common ones; bring-your-own for the rest.
 - 🏠 **Local-first** — defaults to a local LM Studio; no API key required for local backends.
-- 🎯 **Purpose-built tools** — `ask`, `summarize`, `classify`, `extract`, `health` — each shaped for a light task, not just a raw chat passthrough.
+- 🎯 **Purpose-built tools** — `ask`, `summarize`, `classify`, `extract`, `translate`, `rewrite`, `commit_message`, `pr_description`, `changelog`, `mock_data`, `map`, `health` — each shaped for a light task, not just a raw chat passthrough.
 - 🧭 **Per-call routing** — every tool takes optional `provider` and `model` args, so the cheap stuff goes local and the *slightly* harder stuff can go to Grok/OpenRouter without reconfiguring.
 - 📂 **File input** — `summarize`/`classify`/`extract` take a `path` (file or glob) and the server reads it locally, so the orchestrator sends only the path — this is what makes offloading *large* inputs actually save tokens.
 - 🩺 **Actionable errors** — connection, timeout, auth, 404-model, and rate-limit failures come back as plain, fix-this-next strings instead of stack traces.
 - 📦 **Single file, zero install** — [PEP 723](https://peps.python.org/pep-0723/) inline deps mean `uv run llm_offload_mcp.py` just works.
+- 🧑‍🚀 **Delegate whole tasks** — the companion `agent_mcp.py` hands a job to a [Hermes](https://github.com/NousResearch/hermes-agent) bot that owns a shell, a filesystem and the `gh` CLI, so the diff and the log it worked from never enter your context.
+- ⚖️ **Spread routing** — `single` puts everything on one backend; `spread` sends cheap structured ops to a small local model and keeps generation on the stronger one. The same summarize measured 0.6s against 6.6s across the two.
+- 🔌 **Installable as a Claude Code plugin** — both servers, with their settings prompted at enable time and keys kept in the keychain.
 - 🤖 **Claude Code subagent included** — an optional `llm-offloader` agent that auto-routes light work for you.
 
 ## Recommended local models
@@ -78,7 +81,7 @@ The plugin bundles both servers and prompts for what they need, so there is noth
 register by hand:
 
 ```bash
-/plugin marketplace add jonpol01/mcp-llm-offload
+/plugin marketplace add seaosinc/mcp-llm-offload
 /plugin install mcp-llm-offload@mcp-llm-offload
 ```
 
@@ -108,7 +111,7 @@ Two things to know before choosing this path:
 ### 2. Get it
 
 ```bash
-git clone https://github.com/jonpol01/mcp-llm-offload.git
+git clone https://github.com/seaosinc/mcp-llm-offload.git
 cd mcp-llm-offload
 ```
 
