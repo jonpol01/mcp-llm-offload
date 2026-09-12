@@ -271,6 +271,8 @@ Claude Code で `health` ツールを実行（または Claude に頼む）し�
 
 ルーティングされたバックエンドがデフォルトのホスト上にない場合（たとえば別マシン上の LM Studio）は、`OFFLOAD_LIGHT_BASE_URL` または `OFFLOAD_HEAVY_BASE_URL` を設定してください。`LLM_BASE_URL` ではこれをカバーできません。この変数はデフォルトのプロバイダーにのみ適用され、プラグインは事前に `<PROVIDER>_BASE_URL` を指定できません。その変数はどのプロバイダーを選ぶかに依存するからです。明示的な `<PROVIDER>_BASE_URL` は、どちらよりも優先されます。
 
+その 2 つが `spread` をカバーします。**per-call** の `provider="lmstudio"` は別の経路で、`LMSTUDIO_BASE_URL` を解決し、ルーティングされたオーバーライドは無視して、プリセットの `localhost:1234` にフォールバックします。LM Studio が別のマシンにある場合は設定してください。プラグインでは **LM Studio URL** として公開されています。設定しないと、ローカルモデルへの per-call エスケープは黙って localhost を向き、失敗します。
+
 `health` は、モードと各半分の送信先を報告します。
 
 コピペ用のひな形は [`.env.example`](.env.example) を参照してください。
