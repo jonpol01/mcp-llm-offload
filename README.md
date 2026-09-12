@@ -246,6 +246,37 @@ mkdir -p .claude/agents && cp agents/llm-offloader.md .claude/agents/
 cp agents/mid-tier.md ~/.claude/agents/
 ```
 
+## Hermes ボットへのタスク委譲（agent_mcp.py）
+
+上記のツールは*生成*をオフロードします — テキストを入れて、テキストが出てきます。`agent_mcp.py` は別の、オプションのサーバーで、*作業*をオフロードします。タスク全体を、独自のシェル、ファイルシステム、`gh` CLI を持つ [Hermes](https://github.com/NousResearch/hermes-agent) ボットに渡し、ボットが報告した内容を返します。
+
+同じ発想を一歩進めたものです。`summarize(path=...)` はファイルをコンテキストから外します。`delegate` はタスク全体をコンテキストから外します — ボットが diff、CI ログ、Issue スレッドを読み、あなたには結論だけが届きます。
+
+**このサーバーは読み取り専用ではありません。** Hermes ボットは自身の認証情報で動作します。コミット、push、コメントが可能です。ツールにはその旨が注釈されており、このサーバーは意図的に独自の安全策を追加しません — ボット自身の Hermes `approvals.deny` ルールが下限です。すべてのタスクを、名前付きのリポジトリとパスにスコープしてください。
+
+```bash
+export HERMES_BASE_URL=http://192.168.1.50:8649/v1   # the bot's gateway, ending in /v1
+export HERMES_API_KEY=...                            # that profile's API_SERVER_KEY
+export HERMES_BOT=github                             # a Hermes profile name
+uv run agent_mcp.py
+```
+
+MCP サーバー名 `agent` として登録します:
+
+```bash
+claude mcp add agent -s user -- uv run /absolute/path/to/agent_mcp.py
+```
+
+| Tool | |
+|---|---|
+| `delegate` | タスクをボットに渡し、その報告を返します。オプションの `bot`、`path`、`system`。 |
+| `bots` | このエンドポイントが提供するボット名を一覧します。 |
+| `health` | キーを表示せずに、エンドポイントとその設定を確認します。 |
+
+エンドポイントとキーは環境変数からのみ読み取り、ツール引数からは決して読み取りません。そのため、プロンプトによって委譲先を別の場所へ向けることはできません。ボット名は実行前にエンドポイントと照合されます。Hermes は未知のモデル名を拒否せず、自身のプロファイルで応答するため、チェックしないタイプミスは、静かに別のエージェントへタスクを渡してしまいます。
+
+Hermes ボットは OpenAI のチャット API も話すため、上記のツールの通常のプロバイダーとしてもすでに動作します — `HERMES_BASE_URL` と `HERMES_API_KEY` を設定すれば `ask(provider="hermes")` です。そこでは安価なモデルを選んでください。それらのツールは読み取り専用と注釈されていますが、背後のエージェントは操作できてしまいます。
+
 ## トラブルシューティング
 
 | 症状 | 対処 |
