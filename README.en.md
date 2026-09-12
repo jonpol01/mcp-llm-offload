@@ -289,6 +289,11 @@ this: it applies only to the default provider, and a plugin cannot name
 `<PROVIDER>_BASE_URL` in advance because that variable depends on which provider you
 pick. An explicit `<PROVIDER>_BASE_URL` still outranks both.
 
+Those two cover `spread`. A **per-call** `provider="lmstudio"` is a different path: it resolves
+`LMSTUDIO_BASE_URL`, ignores the routed overrides, and falls back to the preset `localhost:1234`.
+If LM Studio is on another machine, set it — the plugin exposes it as **LM Studio URL**. Without it
+the per-call escape to a local model silently aims at localhost and fails.
+
 `health` reports the mode and where each half is going.
 
 See [`.env.example`](.env.example) for a copy-paste starting point.

@@ -18,7 +18,8 @@
         "OFFLOAD_LIGHT_PROVIDER": "${user_config.light_provider}",
         "OFFLOAD_HEAVY_PROVIDER": "${user_config.heavy_provider}",
         "OFFLOAD_LIGHT_BASE_URL": "${user_config.light_base_url}",
-        "OFFLOAD_HEAVY_BASE_URL": "${user_config.heavy_base_url}"
+        "OFFLOAD_HEAVY_BASE_URL": "${user_config.heavy_base_url}",
+        "LMSTUDIO_BASE_URL": "${user_config.lmstudio_base_url}"
       }
     },
     "agent": {
