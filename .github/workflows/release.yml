@@ -1,0 +1,33 @@
+name: Release
+
+# Tag each new plugin version as mcp-llm-offload--v<version>, the form Claude Code resolves
+# version pins and dependency ranges against. `claude plugin tag` also refuses to tag when
+# plugin.json and the marketplace entry disagree.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code@2.1.270
+
+      - name: Tag the version if it is new
+        run: |
+          tag="mcp-llm-offload--v$(jq -r .version .claude-plugin/plugin.json)"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag already exists; nothing to release."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          claude plugin tag --push

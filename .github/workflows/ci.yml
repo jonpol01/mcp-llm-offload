@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# These jobs run the pull request's own code (the import smoke test, and the plugin's
+# servers under `claude mcp list`), so the token stays read-only.
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -27,3 +32,56 @@ jobs:
               spec.loader.exec_module(mod)
               print("import ok:", f, "->", mod.mcp.name)
           PY
+
+  # `claude plugin update` only moves when plugin.json's version changes, so plugin code
+  # shipped under an old version leaves every installed copy silently stale.
+  version-bump:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Plugin code changed => version bumped
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if ! git diff --name-only "$BASE"...HEAD \
+               | grep -qE '^(llm_offload_mcp\.py|agent_mcp\.py|\.mcp\.json|\.claude-plugin/)'; then
+            echo "No plugin code changed, so no version bump is needed."
+            exit 0
+          fi
+          old=$(git show "$BASE:.claude-plugin/plugin.json" | jq -r .version)
+          new=$(jq -r .version .claude-plugin/plugin.json)
+          if [ "$old" = "$new" ] || [ "$(printf '%s\n%s\n' "$old" "$new" | sort -V | tail -1)" != "$new" ]; then
+            echo "::error file=.claude-plugin/plugin.json::Plugin code changed but the version is $new (was $old). Raise it: installed copies only update when it changes."
+            exit 1
+          fi
+          echo "version $old -> $new"
+
+  # `claude plugin validate` passes even when the plugin ships no MCP servers at all,
+  # so install it for real and check what Claude Code actually loads.
+  plugin-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code@2.1.270
+
+      - name: Validate, install, connect
+        run: |
+          export CLAUDE_CONFIG_DIR="$RUNNER_TEMP/claude"
+          claude plugin validate --strict .
+          claude plugin marketplace add ./
+          claude plugin install mcp-llm-offload@mcp-llm-offload
+          claude plugin details mcp-llm-offload@mcp-llm-offload | tee "$RUNNER_TEMP/details.txt"
+          grep -q "MCP servers (2)" "$RUNNER_TEMP/details.txt"
+          # Outside the repo, so its .mcp.json is not also read as project config.
+          cd "$RUNNER_TEMP"
+          claude mcp list | tee mcp.txt
+          test "$(grep -c 'plugin:mcp-llm-offload:.*Connected' mcp.txt)" -eq 2
