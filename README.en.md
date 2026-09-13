@@ -21,6 +21,30 @@ Frontier models are great, but a lot of day-to-day agent work is *light*: summar
 
 `mcp-llm-offload` exposes a handful of MCP tools that forward those tasks to a backend of **your** choosing. Because LM Studio, Ollama, llama.cpp, OpenRouter, Grok, OpenAI, Groq and Together all speak the same `/v1/chat/completions` API, one tiny server talks to all of them — and you can switch backends with an env var or override **per call**.
 
+## What gets offloaded, and what stays with Claude
+
+| Work | Goes to |
+|---|---|
+| Summarize a log, a diff or a long thread | **Offload backend**, via `summarize(path=…)` so the file never enters your context |
+| Classify, extract, translate, rewrite | **Offload backend** |
+| Commit message, PR description, changelog, mock data | **Offload backend** |
+| Triage PRs and issues, read review threads | **Hermes bot**, via `delegate` |
+| Draft a reply, post a comment, label or close an issue | **Hermes bot**, via `delegate` |
+| Open a PR a human has approved | **Hermes bot**, via `delegate`\* |
+| Write or change code | **Claude** |
+| Review a diff for real bugs, or judge whether a reviewer is right | **Claude** |
+| Architecture, security, API design | **Claude** |
+| Run tests, builds or linters, or edit the working tree | **Claude** |
+| `git push` / `commit` / `clone`, one-line `gh` calls | **Claude** |
+| Approve a PR before it opens | **You** |
+| Public replies on someone else's project | **You** — the bot posts under your account |
+
+- **Offload backend** is wherever the `offload` tools resolve: a local model, a hosted provider, or a Hermes bot, which becomes the default once `HERMES_BASE_URL` is set (unless `LLM_PROVIDER` says otherwise). With `OFFLOAD_ROUTING=spread`, summarize, classify, extract, translate and rewrite go to a light backend and the rest to a heavy one.
+- **Only the offload tools have a fallback.** `LLM_FALLBACK_PROVIDER` covers a backend that is unreachable, overloaded or out of quota; a bad key or a wrong bot name is reported, not retried. `delegate` has none: if the bot is down, it says so.
+- **\*** When the PR text already exists on your machine, open it yourself. The bot cannot read your files, so delegating means pasting the whole text into the task, which costs more than the command.
+
+One rule decides every row: **does the work need local execution or code judgement?** If it does, it stays with Claude. The full tables and the measured numbers are in [What to offload, and what to keep](#what-to-offload-and-what-to-keep).
+
 ## Features
 
 - 🔀 **Provider-agnostic** — one server, any OpenAI-compatible endpoint. Presets for the common ones; bring-your-own for the rest.
