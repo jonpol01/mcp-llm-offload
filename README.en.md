@@ -380,15 +380,24 @@ uv run agent_mcp.py
 
 ### Making a bot serve as a backend
 
+This starts from a Hermes that is already installed and answering chat with a model of its
+own (`hermes model`). The official installer includes what the API server needs; installing
+the package without its extras leaves out `aiohttp`, and the API server cannot start without it.
+
 A fresh Hermes profile serves nothing. What starts its OpenAI-compatible endpoint is an
 API key in that profile's `.env` — without one the platform refuses to start, and the only
-sign is that nothing is listening.
+sign is that nothing is listening. A key shorter than 16 characters is ignored just as
+silently.
+
+Generate the key in your shell and append the result to the file (or edit the lines if they
+are already there). A `.env` file is read as plain text, so a pasted `$(openssl …)` would
+itself become the key — the same string for everyone who copied it:
 
 ```bash
-# ~/.hermes/profiles/<name>/.env
-API_SERVER_KEY=$(openssl rand -hex 32)   # required: no key, no listener
-API_SERVER_PORT=8649                     # default 8642, and one port per profile
-API_SERVER_HOST=0.0.0.0                  # only if Claude Code runs on a different machine
+ENV=~/.hermes/profiles/<name>/.env   # the default profile's is ~/.hermes/.env
+echo "API_SERVER_KEY=$(openssl rand -hex 32)" >> "$ENV"   # required: no key, no listener
+echo "API_SERVER_PORT=8649" >> "$ENV"                     # default 8642, and one port per profile
+echo "API_SERVER_HOST=0.0.0.0" >> "$ENV"                  # only if Claude Code runs on a different machine
 ```
 
 `API_SERVER_HOST` defaults to `127.0.0.1`. A bot on a different box than Claude Code will
@@ -398,11 +407,13 @@ configuration one — it is the setting most likely to cost you an afternoon.
 Restart that profile's gateway, then prove the endpoint before touching Claude Code at all:
 
 ```bash
-curl -H "Authorization: Bearer $API_SERVER_KEY" http://<host>:<port>/v1/models
+KEY=$(sed -n 's/^API_SERVER_KEY=//p' "$ENV")
+curl -H "Authorization: Bearer $KEY" http://<host>:<port>/v1/models
 ```
 
-The `id` it returns is the profile name. That string is what `HERMES_BOT` wants, and what
-`delegate(bot=…)` addresses — the bot is the "model" as far as the OpenAI API is concerned.
+The `id` it returns is the profile name (`hermes-agent` for the default profile). That
+string is what `HERMES_BOT` wants, and what `delegate(bot=…)` addresses — the bot is the
+"model" as far as the OpenAI API is concerned.
 
 Register it under the MCP server name `agent`, passing the settings as env:
 
@@ -430,8 +441,9 @@ refusing it, so an unchecked typo would quietly hand the task to a different age
 
 A Hermes bot also speaks the OpenAI chat API, so it already works as an ordinary provider for
 the tools above — `ask(provider="hermes")` once `HERMES_BASE_URL` and `HERMES_API_KEY` are
-set. Prefer a cheap model there: those tools are annotated read-only, and an agent backing
-them can act.
+set. They check the bot name the same way before sending anything, so a stale `HERMES_BOT`
+fails with the list of served names instead of landing on another profile. Prefer a cheap
+model there: those tools are annotated read-only, and an agent backing them can act.
 
 ## What to offload, and what to keep
 
