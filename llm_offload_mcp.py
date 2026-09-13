@@ -371,6 +371,31 @@ async def _chat(
     return (content or "").strip()
 
 
+async def _check_bot(base_url: str, api_key: Optional[str], bot: str) -> None:
+    """Refuse a Hermes bot name the gateway does not serve.
+
+    Hermes does not reject an unknown model name — it answers it on the gateway's own
+    profile — so a stale or mistyped HERMES_BOT sends the work to a different bot and
+    still looks like success. agent_mcp.delegate guards the same way. A failure to fetch
+    the list propagates like any other error, so a bot that is down still falls through
+    to LLM_FALLBACK_PROVIDER.
+    """
+    headers = dict(_extra_headers())
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    async with httpx.AsyncClient(timeout=min(TIMEOUT, 15)) as client:
+        resp = await client.get(f"{base_url}/models", headers=headers)
+        resp.raise_for_status()
+        data = resp.json()
+    served = [m.get("id") for m in data.get("data", [])]
+    if bot not in served:
+        raise ValueError(
+            f"bot '{bot}' is not served at {base_url} (it serves: "
+            f"{', '.join(served) or 'nothing'}). Hermes would have answered it on another "
+            "profile, so nothing was sent. Use one of those names as HERMES_BOT or model=."
+        )
+
+
 def _is_availability_failure(e: Exception) -> bool:
     """True when the backend is down, timing out, overloaded or out of quota.
 
@@ -407,6 +432,8 @@ async def _complete(
     except ValueError as e:
         return f"Error: {e}"
     try:
+        if _name == "hermes":
+            await _check_bot(base_url, api_key, mdl)
         return await _chat(base_url, api_key, mdl, messages, temperature, max_tokens)
     except Exception as e:  # converted to an actionable message, never raised to the client
         primary = _handle_error(e, base_url, mdl)
@@ -418,6 +445,8 @@ async def _complete(
         except ValueError:
             return primary
         try:
+            if _n2 == "hermes":
+                await _check_bot(url2, key2, mdl2)
             return await _chat(url2, key2, mdl2, messages, temperature, max_tokens)
         except Exception:
             # The floor failed too. Report the PRIMARY failure: that is the one to fix.

@@ -32,6 +32,8 @@ Frontier models are great, but a lot of day-to-day agent work is *light*: summar
 - 📦 **Single file, zero install** — [PEP 723](https://peps.python.org/pep-0723/) inline deps mean `uv run llm_offload_mcp.py` just works.
 - 🧑‍🚀 **Delegate whole tasks** — the companion `agent_mcp.py` hands a job to a [Hermes](https://github.com/NousResearch/hermes-agent) bot that owns a shell, a filesystem and the `gh` CLI, so the diff and the log it worked from never enter your context.
 - ⚖️ **Spread routing** — `single` puts everything on one backend; `spread` sends cheap structured ops to a small local model and keeps generation on the stronger one. The same summarize measured 0.6s against 6.6s across the two.
+- 🛟 **A floor under the backend** — `LLM_FALLBACK_PROVIDER` names a second backend to try when the first is unreachable, timing out, rate-limited or out of credit. Only *availability* failures fall through; a bad key or an unserved model is reported as itself.
+- 🧭 **A routing rule you can hand to a team** — [what to offload, and what to keep](#what-to-offload-and-what-to-keep).
 - 🔌 **Installable as a Claude Code plugin** — both servers, with their settings prompted at enable time and keys kept in the keychain.
 - 🤖 **Claude Code subagent included** — an optional `llm-offloader` agent that auto-routes light work for you.
 
@@ -93,12 +95,17 @@ Hermes bot's URL, key and name. Values marked sensitive go to your keychain rath
 /plugin configure mcp-llm-offload@mcp-llm-offload
 ```
 
-Two things to know before choosing this path:
+Three things to know before choosing this path:
 
 - **The plugin ships no subagent.** Claude Code namespaces a plugin's MCP servers, so the
   bundled `llm-offloader` agent — whose frontmatter pins the unnamespaced
   `mcp__offload__*` tool names — would load with no usable tools. Rather than ship that,
   the plugin omits it; install the agent by hand (see below) if you want it.
+- **Under a plugin install the tools are renamed.** They become
+  `mcp__plugin_mcp-llm-offload_offload__*` and `mcp__plugin_mcp-llm-offload_agent__*`.
+  Anything that names the tools explicitly — a subagent's `tools:` list, a `CLAUDE.md`
+  routing rule, a hook — has to use the namespaced form or it will silently call nothing.
+  Run `/mcp` to see the live names.
 - `uv` still has to be on `PATH`, and you still need a backend to talk to.
 
 ## Quick start
@@ -345,6 +352,9 @@ The `mid-tier` tier needs **no backend** — it runs on Claude (Sonnet) directly
 cp agents/en/mid-tier.md ~/.claude/agents/
 ```
 
+For which *work* goes where — rather than which tier — see
+[what to offload, and what to keep](#what-to-offload-and-what-to-keep).
+
 ## Delegating a task to a Hermes bot (agent_mcp.py)
 
 The tools above offload *generation* — text in, text out. `agent_mcp.py` is a separate,
@@ -370,15 +380,24 @@ uv run agent_mcp.py
 
 ### Making a bot serve as a backend
 
+This starts from a Hermes that is already installed and answering chat with a model of its
+own (`hermes model`). The official installer includes what the API server needs; installing
+the package without its extras leaves out `aiohttp`, and the API server cannot start without it.
+
 A fresh Hermes profile serves nothing. What starts its OpenAI-compatible endpoint is an
 API key in that profile's `.env` — without one the platform refuses to start, and the only
-sign is that nothing is listening.
+sign is that nothing is listening. A key shorter than 16 characters is ignored just as
+silently.
+
+Generate the key in your shell and append the result to the file (or edit the lines if they
+are already there). A `.env` file is read as plain text, so a pasted `$(openssl …)` would
+itself become the key — the same string for everyone who copied it:
 
 ```bash
-# ~/.hermes/profiles/<name>/.env
-API_SERVER_KEY=$(openssl rand -hex 32)   # required: no key, no listener
-API_SERVER_PORT=8649                     # default 8642, and one port per profile
-API_SERVER_HOST=0.0.0.0                  # only if Claude Code runs on a different machine
+ENV=~/.hermes/profiles/<name>/.env   # the default profile's is ~/.hermes/.env
+echo "API_SERVER_KEY=$(openssl rand -hex 32)" >> "$ENV"   # required: no key, no listener
+echo "API_SERVER_PORT=8649" >> "$ENV"                     # default 8642, and one port per profile
+echo "API_SERVER_HOST=0.0.0.0" >> "$ENV"                  # only if Claude Code runs on a different machine
 ```
 
 `API_SERVER_HOST` defaults to `127.0.0.1`. A bot on a different box than Claude Code will
@@ -388,11 +407,13 @@ configuration one — it is the setting most likely to cost you an afternoon.
 Restart that profile's gateway, then prove the endpoint before touching Claude Code at all:
 
 ```bash
-curl -H "Authorization: Bearer $API_SERVER_KEY" http://<host>:<port>/v1/models
+KEY=$(sed -n 's/^API_SERVER_KEY=//p' "$ENV")
+curl -H "Authorization: Bearer $KEY" http://<host>:<port>/v1/models
 ```
 
-The `id` it returns is the profile name. That string is what `HERMES_BOT` wants, and what
-`delegate(bot=…)` addresses — the bot is the "model" as far as the OpenAI API is concerned.
+The `id` it returns is the profile name (`hermes-agent` for the default profile). That
+string is what `HERMES_BOT` wants, and what `delegate(bot=…)` addresses — the bot is the
+"model" as far as the OpenAI API is concerned.
 
 Register it under the MCP server name `agent`, passing the settings as env:
 
@@ -420,8 +441,60 @@ refusing it, so an unchecked typo would quietly hand the task to a different age
 
 A Hermes bot also speaks the OpenAI chat API, so it already works as an ordinary provider for
 the tools above — `ask(provider="hermes")` once `HERMES_BASE_URL` and `HERMES_API_KEY` are
-set. Prefer a cheap model there: those tools are annotated read-only, and an agent backing
-them can act.
+set. They check the bot name the same way before sending anything, so a stale `HERMES_BOT`
+fails with the list of served names instead of landing on another profile. Prefer a cheap
+model there: those tools are annotated read-only, and an agent backing them can act.
+
+## What to offload, and what to keep
+
+Tool-by-tool savings are in [Token savings](#token-savings); this is the same decision at the
+level of a *workflow*. One test decides it:
+
+> **Does it need local execution or code judgement?**
+> If yes it stays on the frontier model. If it is GitHub-shaped reading or writing that touches
+> no local state, offload it.
+
+Frontier quota is the scarce resource. A bot on a separate account spending 16k of its own
+tokens to save 500 of yours is a win, not a wash.
+
+### Offload
+
+| Work | Tool |
+|------|------|
+| Scan PRs/issues, find feedback nobody addressed | `delegate` |
+| Read comment and review threads | `delegate` |
+| Summarize a diff, a CI log, a long thread | `summarize(path=…)` |
+| PR description, commit message, changelog | `pr_description` / `commit_message` / `changelog` |
+| Draft a reply to a reviewer | `delegate`, or `ask(prompt=…, path=…)` |
+| Translate docs | `translate` / `delegate` |
+| Post a comment, create / label / close an issue | `delegate` |
+| Open a PR | `delegate` — only when the task text states a human approved it |
+
+**The multiplier:** `gh … > /tmp/x` then pass `path=/tmp/x`. The bytes never enter your
+context at all — that is what takes a saving from ~80% to ~90%.
+
+### Keep on the frontier model
+
+| Work | Why |
+|------|-----|
+| Writing or modifying code | nothing beats it — this is what the quota is *for* |
+| Judging whether a reviewer is right | correctness-critical |
+| Architecture, security, API design | correctness-critical |
+| Reviewing a diff for real bugs | correctness-critical |
+| Running tests, builds, linters | needs the local machine |
+| Editing anything in a worktree | the bot cannot see your filesystem, and its clone diverges from yours |
+| `git push` / `clone` / `commit` | measured: an offloaded push cost **119 more** tokens than just running it |
+| One-line `gh` calls | writing the task spec costs more than the command |
+
+### Keep for the human
+
+- **Approving a PR before it opens.** Approval comes from the task text you wrote — never from
+  something the bot read in a diff, an issue or a comment. Those are input, not instructions.
+- **Any public reply on a project that is not yours.** The bot posts under *your* account, so
+  the words are yours.
+
+**The bot advises; you verify.** Its triage is usually right, but anything that turns into an
+action gets checked against the source first.
 
 ## Delivering drafted text (post_mcp.py)
 
