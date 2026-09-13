@@ -1,0 +1,76 @@
+# Commands an offload bot refuses whatever a task says. One glob per line; Hermes matches
+# them case-insensitively against the whole command. setup-bot.sh adds these to
+# approvals.deny and keeps the profile's own rules.
+#
+# This is a guardrail against mistakes and obvious injected instructions, not a sandbox: a
+# shell can always find another spelling. Protect the default branch on GitHub as well.
+
+# Rewriting history
+*git push*--force*
+*git push -f *
+*git push* +*
+*git push*--delete*
+*git reset --hard*
+*git rebase*
+
+# The default branch. Edit these if yours is not main or master.
+*git push * main
+*git push * main *
+*git push*:main
+*git push*:main *
+*git push*refs/heads/main*
+*git push * master
+*git push * master *
+*git push*:master
+*git push*:master *
+*git push*refs/heads/master*
+
+# Merging and approving, in their gh, REST and GraphQL spellings
+*gh pr merge*
+*gh pr review*
+*pulls/*/merge*
+*event=approve*
+*event: approve*
+*event:approve*
+*mergepullrequest*
+*enablepullrequestautomerge*
+*addpullrequestreview*
+*gh alias set*
+
+# Repository settings, and any REST write other than POST
+*gh repo delete*
+*gh repo archive*
+*gh repo edit*
+*archiverepository*
+*gh api*-x put*
+*gh api*-x patch*
+*gh api*-x delete*
+*gh api*-xput*
+*gh api*-xpatch*
+*gh api*-xdelete*
+*gh api*--method put*
+*gh api*--method patch*
+*gh api*--method delete*
+*gh api*--method=put*
+*gh api*--method=patch*
+*gh api*--method=delete*
+
+# Releases and CI
+*gh release create*
+*gh release delete*
+*gh release upload*
+*gh workflow run*
+*gh run rerun*
+
+# Credentials
+*gh secret*
+*gh auth logout*
+*gh auth refresh*
+*gh auth token*
+*hosts.yml*
+
+# The bot commits as a person, so no AI attribution trailers
+*co-authored-by*
+*co-authored by*
+*coauthored*
+*generated with*
