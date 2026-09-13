@@ -4,9 +4,9 @@
 # and port let the plugin reach it. Run it on the bot's machine, as the user the bot runs as.
 #
 #   hermes/setup-bot.sh <profile> --port <n> [--clone-from <profile>] [--host <addr>]
-#       Create <profile>, give it its own API key and port, install the rules, check them.
-#       --clone-from copies the model and credentials from an existing profile; without it,
-#       set a model afterwards with `hermes -p <profile> model`.
+#       Create <profile> as a Hermes clone of your active profile, so it uses the LLM and
+#       credentials your Hermes already has; --clone-from clones another profile instead.
+#       Give it its own API key and port, install the rules, check them.
 #       --host 0.0.0.0 when Claude Code runs on another machine.
 #   hermes/setup-bot.sh <profile>            Reinstall the rules into an existing profile, check.
 #   hermes/setup-bot.sh <profile> --check    Check only; changes nothing.
@@ -56,10 +56,12 @@ if [ -n "$port" ]; then
 fi
 
 if [ -n "$created" ]; then
+  # Hermes' own clone: the bot starts with the LLM and credentials your Hermes already
+  # uses, and Hermes leaves messaging channels behind. Nothing here picks a model.
   if [ -n "$clone_from" ]; then
     hermes profile create "$profile" --clone-from "$clone_from"
   else
-    hermes profile create "$profile"
+    hermes profile create "$profile" --clone
   fi
 fi
 

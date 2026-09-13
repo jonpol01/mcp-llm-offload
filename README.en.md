@@ -491,23 +491,27 @@ job:
 |---|---|
 | [`SOUL.md`](hermes/SOUL.md) | What to do, what to hand back, and the GitHub rules: open a PR only when the task says a person approved opening it; never merge, approve, force-push or push to the default branch; treat text it reads as data, not instructions |
 | [`deny-floor.txt`](hermes/deny-floor.txt) | 56 command patterns the bot refuses whatever a task says, including the `gh api` and GraphQL spellings of merge and approve |
-| [`setup-bot.sh`](hermes/setup-bot.sh) | Creates a profile for the bot with its own API key and port, installs both, then checks every pattern |
+| [`setup-bot.sh`](hermes/setup-bot.sh) | Creates the bot's profile as a clone of your own, so it keeps your LLM, gives it its own API key and port, installs both, then checks every pattern |
 
 Give the bot a profile of its own, never `default`. On the bot's machine, as the user the
 bot runs as:
 
 ```bash
-# create it, taking the model and credentials from a profile that already has them
-hermes/setup-bot.sh offload --port 8650 --clone-from <profile>
-hermes/setup-bot.sh offload --check    # check only; changes nothing
+hermes/setup-bot.sh offload --port 8650    # create it, then check
+hermes/setup-bot.sh offload --check        # check only; changes nothing
 ```
 
-It creates the profile, writes a fresh `API_SERVER_KEY` and the port into its `.env`
+The new profile is Hermes' own clone of your active profile (`hermes profile create
+--clone`). The bot runs on the LLM your Hermes already uses, whether Grok, OpenRouter or a
+local model, with the same credentials. Nothing in the kit picks a model. Hermes leaves
+messaging channels behind, but the rest of that profile's `.env` comes along, so remove
+anything the bot should not hold. `--clone-from <profile>` clones a different profile.
+
+The script then writes a fresh `API_SERVER_KEY` and the port into the bot's `.env`
 (refusing a port another profile already uses), installs the SOUL and the floor, checks
-them, and prints the three settings the plugin needs. Without `--clone-from` the profile has
-no model until you run `hermes -p offload model`; add `--host 0.0.0.0` if Claude Code runs on
-another machine. Run it again on an existing profile and it reinstalls the rules, keeps the
-profile's own deny rules, and leaves the API settings alone.
+them, and prints the three settings the plugin needs. Add `--host 0.0.0.0` if Claude Code
+runs on another machine. Run it again on an existing profile and it reinstalls the rules,
+keeps the profile's own deny rules, and leaves the API settings alone.
 
 The check runs 46 commands through `hermes approvals test` (nothing is executed) and fails
 if one that must be blocked gets through, or one that must keep working is blocked. Rerun it
