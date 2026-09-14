@@ -191,6 +191,16 @@ fi
 if ! hp config get model.default >/dev/null 2>&1; then
   echo "No model is set yet, so the bot cannot answer. Set one: hermes -p $profile model"
 fi
+# GitHub work runs on the gh login of this system user; Hermes strips GH_TOKEN from the bot.
+me=$(id -un)
+if ! command -v gh >/dev/null 2>&1; then
+  echo "GitHub: gh is not installed for $me, so the bot cannot do GitHub work."
+elif account=$(env -u GH_TOKEN -u GITHUB_TOKEN gh auth status 2>&1 \
+    | sed -nE 's/.*Logged in to github\.com (account|as) ([^ ]+).*/\2/p' | head -1) && [ -n "$account" ]; then
+  echo "GitHub: the bot acts as $account (the gh login of $me, shared by every profile of $me)."
+else
+  echo "GitHub: gh is not logged in for $me, so the bot cannot do GitHub work. Run gh auth login as $me."
+fi
 if [ -z "$check_only" ]; then
   p=$(sed -n 's/^API_SERVER_PORT=//p' "$envf" 2>/dev/null)
   h=$(sed -n 's/^API_SERVER_HOST=//p' "$envf" 2>/dev/null)

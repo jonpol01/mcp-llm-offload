@@ -518,6 +518,22 @@ if one that must be blocked gets through, or one that must keep working is block
 after any config change. Start the gateway afterwards, or restart it after a reinstall, so
 the bot reads its SOUL.
 
+**GitHub access is the one thing the kit does not set up.** A bot uses the `gh` login of the
+system user it runs as, so every profile of that user shares one GitHub account. A token in
+the profile's `.env` does not work: Hermes strips `GH_TOKEN` and `GITHUB_TOKEN` from every
+command a bot runs. As that user, once:
+
+```bash
+gh auth login                     # or: gh auth login --with-token < token.txt
+gh auth setup-git                 # so git push uses the same login
+git config --global user.name  "Your Name"
+git config --global user.email "you@users.noreply.github.com"
+```
+
+Prefer a fine-grained token limited to the repositories the bot works on, without admin
+rights. The floor stops the obvious mistakes; the token decides what is possible at all.
+`setup-bot.sh` ends by reporting which account that user is logged in as.
+
 When you delegate a PR, say so in the task: "the owner approved opening this PR". `gh pr
 create` stays allowed on purpose, since an unwanted PR is closed with one click, so the SOUL
 is what gates it. Add `*gh pr create*` to the floor if you want that gate to be hard.
